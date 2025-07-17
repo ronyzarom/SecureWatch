@@ -5,6 +5,7 @@ import { getRiskColor, getRiskTextColor, formatTimeAgo } from '../utils/riskUtil
 import { LoadingSpinner, InlineLoading } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
 import { AppError, ErrorType, createError, withErrorHandling, logError } from '../utils/errorUtils';
+import { EmailViewModal } from './EmailViewModal';
 
 interface EmployeeDetailsModalProps {
   employee: Employee;
@@ -12,9 +13,80 @@ interface EmployeeDetailsModalProps {
   loading?: boolean;
 }
 
+// Avatar component for employee details modal
+const ModalAvatar: React.FC<{ employee: Employee }> = ({ employee }) => {
+  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  // Generate initials from name
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .substring(0, 2)
+      .toUpperCase();
+  };
+
+  // Generate color based on name
+  const getBackgroundColor = (name: string) => {
+    const colors = [
+      '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
+      '#FFEAA7', '#DDA0DD', '#FFB6C1', '#87CEEB'
+    ];
+    const index = Math.abs(name.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) % colors.length;
+    return colors[index];
+  };
+
+  const photoUrl = employee.photoUrl || employee.photo;
+  const initials = getInitials(employee.name);
+  const backgroundColor = getBackgroundColor(employee.name);
+
+  // If no photo URL or image failed, show initials avatar
+  if (!photoUrl || imageError) {
+    return (
+      <div 
+        className="w-full h-full flex items-center justify-center text-white font-bold text-2xl"
+        style={{ backgroundColor }}
+      >
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-full">
+      {imageLoading && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center text-white font-bold text-2xl animate-pulse"
+          style={{ backgroundColor }}
+        >
+          {initials}
+        </div>
+      )}
+      <img 
+        src={photoUrl}
+        alt={employee.name}
+        className={`w-full h-full object-cover ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+        onError={() => {
+          console.log('Modal image failed, showing initials for:', employee.name);
+          setImageError(true);
+          setImageLoading(false);
+        }}
+        onLoad={() => {
+          console.log('Modal image loaded successfully for:', employee.name);
+          setImageLoading(false);
+        }}
+      />
+    </div>
+  );
+};
+
 export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ employee, onClose, loading = false }) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<AppError | null>(null);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
 
   // Simulate API calls for actions
   const simulateAction = async (actionType: string): Promise<void> => {
@@ -102,11 +174,7 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
             <div className="flex items-start space-x-6">
               <div className="relative">
                 <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-white dark:border-gray-600 shadow-lg">
-                  <img 
-                    src={employee.photoUrl || employee.photo || '/default-avatar.png'} 
-                    alt={employee.name}
-                    className="w-full h-full object-cover"
-                  />
+                  <ModalAvatar employee={employee} />
                 </div>
                 <div className={`absolute -top-2 -right-2 w-10 h-10 ${getRiskColor(employee.riskLevel)} rounded-full flex items-center justify-center shadow-lg border-2 border-white dark:border-gray-600`}>
                   <span className="text-white text-sm font-bold">{employee.riskScore}</span>
@@ -234,7 +302,75 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                             </span>
                           </div>
                           
-                          <p className="text-red-800 dark:text-red-200 mb-3 leading-relaxed">{violation.description}</p>
+                          <p className="text-red-800 dark:text-red-200 mb-3 leading-relaxed">
+                            {violation.metadata?.emailSubject ? 
+                              `High-risk email detected: "${violation.metadata.emailSubject}"` : 
+                              violation.description
+                            }
+                          </p>
+                          
+                          {/* Evidence Details */}
+                          {violation.metadata && (
+                            <div className="bg-red-100 dark:bg-red-900/30 rounded-lg p-3 mb-3">
+                              <h5 className="text-sm font-semibold text-red-900 dark:text-red-100 mb-2">
+                                Email Evidence Details
+                              </h5>
+                              <div className="space-y-1 text-sm">
+                                {violation.metadata.emailSubject && (
+                                  <div className="flex items-start space-x-2">
+                                    <span className="font-medium text-red-800 dark:text-red-200 min-w-0">Subject:</span>
+                                    <span className="text-red-700 dark:text-red-300 break-words">
+                                      {violation.metadata.emailSubject}
+                                    </span>
+                                  </div>
+                                )}
+                                {violation.metadata.riskScore && (
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-medium text-red-800 dark:text-red-200">Risk Score:</span>
+                                    <span className={`font-bold ${
+                                      violation.metadata.riskScore >= 90 ? 'text-red-600 dark:text-red-400' :
+                                      violation.metadata.riskScore >= 70 ? 'text-orange-600 dark:text-orange-400' :
+                                      'text-yellow-600 dark:text-yellow-400'
+                                    }`}>
+                                      {violation.metadata.riskScore}%
+                                    </span>
+                                  </div>
+                                )}
+                                {violation.metadata.category && (
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-medium text-red-800 dark:text-red-200">Category:</span>
+                                    <span className="text-red-700 dark:text-red-300 capitalize">
+                                      {violation.metadata.category.replace('_', ' ')}
+                                    </span>
+                                  </div>
+                                )}
+                                {violation.source && (
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-medium text-red-800 dark:text-red-200">Source:</span>
+                                    <span className="text-red-700 dark:text-red-300 capitalize">
+                                      {violation.source.replace('_', ' ')}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* View Email Button */}
+                              {violation.metadata?.emailId && (
+                                <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedEmailId(violation.metadata.emailId);
+                                      setEmailModalOpen(true);
+                                    }}
+                                    className="inline-flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                    <span>View Email</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-4 text-sm text-red-700 dark:text-red-300">
@@ -244,8 +380,23 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                               </span>
                               <span className="flex items-center space-x-1">
                                 <FileText className="w-4 h-4 dark:text-red-300" />
-                                <span>{violation.evidence.length} evidence items</span>
+                                <span>
+                                  {violation.evidence?.length ? 
+                                    `${violation.evidence.length} evidence items` : 
+                                    violation.metadata?.emailId ? 
+                                      `Email Evidence - Risk: ${violation.metadata.riskScore}%` :
+                                      'No evidence'
+                                  }
+                                </span>
                               </span>
+                              {violation.metadata?.emailSubject && (
+                                <span className="flex items-center space-x-1">
+                                  <Mail className="w-4 h-4 dark:text-red-300" />
+                                  <span className="truncate max-w-48" title={violation.metadata.emailSubject}>
+                                    {violation.metadata.emailSubject}
+                                  </span>
+                                </span>
+                              )}
                             </div>
                             
                             <div className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -435,6 +586,18 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
             </div>
         </div>
       </div>
+      
+      {/* Email View Modal */}
+      {selectedEmailId && (
+        <EmailViewModal
+          emailId={selectedEmailId}
+          isOpen={emailModalOpen}
+          onClose={() => {
+            setEmailModalOpen(false);
+            setSelectedEmailId(null);
+          }}
+        />
+      )}
     </div>
   );
 };

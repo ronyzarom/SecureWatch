@@ -293,12 +293,12 @@ export const settingsAPI = {
 
   // Email Settings
   getEmail: async () => {
-    const response = await api.get('/api/settings/email');
+    const response = await api.get('/api/settings/email/config');
     return response.data;
   },
 
   updateEmail: async (emailConfig: any) => {
-    const response = await api.put('/api/settings/email', emailConfig);
+    const response = await api.put('/api/settings/email/config', emailConfig);
     return response.data;
   },
 

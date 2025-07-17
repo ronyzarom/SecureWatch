@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, Server, Shield, CheckCircle, AlertTriangle, Save } from 'lucide-react';
 import { EmailServerConfig } from '../types';
+import { settingsAPI } from '../services/api';
 
 export const SettingsEmailPage: React.FC = () => {
   const [config, setConfig] = useState<EmailServerConfig>({
-    host: 'mail.company.com',
-    port: 993,
-    encryption: 'ssl',
-    username: 'security@company.com',
+    host: '',
+    port: 587,
+    encryption: 'tls',
+    username: '',
     password: '',
     testConnection: false
   });
@@ -15,31 +16,90 @@ export const SettingsEmailPage: React.FC = () => {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'success' | 'error' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [hasSavedPassword, setHasSavedPassword] = useState(false);
+
+  // Load existing configuration on component mount
+  useEffect(() => {
+    loadEmailConfig();
+  }, []);
+
+  const loadEmailConfig = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await settingsAPI.getEmail();
+      if (data.emailConfig) {
+        const hasPassword = !!(data.emailConfig.password);
+        setHasSavedPassword(hasPassword);
+        setConfig({
+          host: data.emailConfig.host || '',
+          port: data.emailConfig.port || 587,
+          encryption: data.emailConfig.encryption || 'tls',
+          username: data.emailConfig.username || '',
+          password: '', // Don't show saved password
+          testConnection: false
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load email config:', err);
+      setError('Failed to load email configuration');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleInputChange = (field: keyof EmailServerConfig, value: string | number) => {
     setConfig(prev => ({ ...prev, [field]: value }));
     setConnectionStatus(null);
+    setSuccessMessage(null);
+    setError(null);
+    
+    // If password is being changed, we no longer have just the saved password
+    if (field === 'password') {
+      setHasSavedPassword(false);
+    }
   };
 
   const handleTestConnection = async () => {
-    setIsTestingConnection(true);
-    setConnectionStatus(null);
-    
-    // Simulate connection test
-    setTimeout(() => {
-      setConnectionStatus(Math.random() > 0.3 ? 'success' : 'error');
+    try {
+      setIsTestingConnection(true);
+      setConnectionStatus(null);
+      setError(null);
+      
+      await settingsAPI.testEmail(config);
+      setConnectionStatus('success');
+    } catch (err) {
+      console.error('Connection test failed:', err);
+      setConnectionStatus('error');
+      setError('Connection test failed. Please check your settings.');
+    } finally {
       setIsTestingConnection(false);
-    }, 2000);
+    }
   };
 
   const handleSave = async () => {
-    setIsSaving(true);
-    
-    // Simulate save operation
-    setTimeout(() => {
+    try {
+      setIsSaving(true);
+      setError(null);
+      setSuccessMessage(null);
+
+      await settingsAPI.updateEmail(config);
+      setSuccessMessage('Email configuration saved successfully!');
+      
+      // Reload configuration to update saved password state
+      await loadEmailConfig();
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      console.error('Failed to save email config:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save email configuration');
+    } finally {
       setIsSaving(false);
-      // Show success message
-    }, 1000);
+    }
   };
 
   return (
@@ -53,6 +113,36 @@ export const SettingsEmailPage: React.FC = () => {
       </div>
 
       <div className="max-w-2xl">
+        {/* Loading State */}
+        {loading && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+              <span className="text-blue-800 dark:text-blue-200">Loading email configuration...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Success Message */}
+        {successMessage && (
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-3">
+              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+              <span className="text-green-800 dark:text-green-200">{successMessage}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+              <span className="text-red-800 dark:text-red-200">{error}</span>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <div className="space-y-6">
             {/* Server Settings */}
@@ -134,9 +224,14 @@ export const SettingsEmailPage: React.FC = () => {
                     type="password"
                     value={config.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
-                    placeholder="Enter password"
+                    placeholder={hasSavedPassword && !config.password ? "••••••••• (saved)" : "Enter password"}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                  {hasSavedPassword && !config.password && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Password is saved. Leave empty to use saved password or enter new password to replace it.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -147,7 +242,7 @@ export const SettingsEmailPage: React.FC = () => {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Connection Test</h3>
                 <button
                   onClick={handleTestConnection}
-                  disabled={isTestingConnection || !config.host || !config.username || !config.password}
+                  disabled={isTestingConnection || !config.host || !config.username || (!config.password && !hasSavedPassword)}
                   className="flex items-center space-x-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isTestingConnection ? (

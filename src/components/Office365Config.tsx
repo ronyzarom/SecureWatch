@@ -12,11 +12,16 @@ import {
   BarChart3,
   Zap,
   Eye,
+  EyeOff,
   Activity,
   Server,
   PieChart,
   TrendingUp,
-  Settings
+  Settings,
+  Info,
+  AlertCircle,
+  TestTube,
+  Play
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -59,6 +64,7 @@ export const Office365Config: React.FC<{
     clientSecret: '',
     tenantId: '',
     isConfigured: false,
+    isActive: true, // Default to active when creating new config
     status: 'disconnected'
   });
   const [showSecret, setShowSecret] = useState(false);
@@ -70,16 +76,22 @@ export const Office365Config: React.FC<{
   const [activeTab, setActiveTab] = useState<'config' | 'status' | 'stats'>('config');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [authLoading, setAuthLoading] = useState(true);
+  const [isSyncingUsers, setIsSyncingUsers] = useState(false);
+  const [userSyncResult, setUserSyncResult] = useState<{ success: boolean; message: string; results?: any } | null>(null);
 
   useEffect(() => {
     // Set auth loading to false immediately since parent handles auth
     setAuthLoading(false);
     
     if (isAuthenticated) {
-      // Add a small delay to ensure session is fully established
+      console.log('Office365Config: Authentication confirmed, loading config...');
+      // Increase delay to ensure session is fully established
       setTimeout(() => {
+        console.log('Office365Config: Starting config load with retry...');
         loadConfigWithRetry();
-      }, 100); // Minimal delay since parent already confirmed auth
+      }, 500); // Increased delay to handle session timing
+    } else {
+      console.log('Office365Config: Not authenticated, skipping config load');
     }
   }, [isAuthenticated]);
 
@@ -87,15 +99,16 @@ export const Office365Config: React.FC<{
     try {
       await loadConfig();
     } catch (error: any) {
-      if (error.response?.status === 401 && retryCount < 2) {
-        console.log(`Auth failed for config load, retrying in ${(retryCount + 1) * 300}ms...`);
+      if (error.response?.status === 401 && retryCount < 3) {
+        console.log(`Office365Config: Auth failed for config load (attempt ${retryCount + 1}/4), retrying in ${(retryCount + 1) * 400}ms...`);
         setTimeout(() => {
           loadConfigWithRetry(retryCount + 1);
-        }, (retryCount + 1) * 300);
+        }, (retryCount + 1) * 400);
       } else {
-        console.error('Failed to load Office 365 config after retries:', error);
-        // If still getting 401 after retries, close modal since parent should handle auth
+        console.error('Office365Config: Failed to load config after all retries:', error);
+        // If still getting 401 after retries, close modal since auth failed
         if (error.response?.status === 401) {
+          console.log('Office365Config: Authentication failed, closing modal');
           onClose();
         }
       }
@@ -110,7 +123,7 @@ export const Office365Config: React.FC<{
       
       setConfig({
         clientId: configData.clientId || '',
-        clientSecret: '', // Never load the actual secret for security
+        clientSecret: configData.hasClientSecret ? '********' : '', // Show masked value if secret is saved
         tenantId: configData.tenantId || '',
         isConfigured: configData.isConfigured || false,
         isActive: configData.isActive !== false, // Default to true if undefined
@@ -223,7 +236,8 @@ export const Office365Config: React.FC<{
       newErrors.clientId = 'Client ID must be a valid GUID';
     }
     
-    if (!config.clientSecret.trim()) {
+    // Client secret is required only if not already saved (not showing masked value)
+    if (!config.clientSecret.trim() && config.clientSecret !== '********') {
       newErrors.clientSecret = 'Client Secret is required';
     }
     
@@ -243,12 +257,19 @@ export const Office365Config: React.FC<{
     
     setIsLoading(true);
     try {
-      const response = await api.put('/api/integrations/office365/config', {
+      const saveData: any = {
         clientId: config.clientId,
-        clientSecret: config.clientSecret,
         tenantId: config.tenantId,
-        isActive: config.isActive !== false // Default to true if undefined
-      });
+        isActive: true // Always enable when saving configuration
+      };
+
+      // Only include client secret if it's new (not the masked value and not empty)
+      if (config.clientSecret && config.clientSecret !== '********') {
+        saveData.clientSecret = config.clientSecret;
+      }
+      // If clientSecret is empty or masked, backend will keep existing secret
+
+      const response = await api.put('/api/integrations/office365/config', saveData);
 
       const updatedConfig = response.data.config;
       setConfig(updatedConfig);
@@ -360,6 +381,71 @@ export const Office365Config: React.FC<{
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.message || 'Failed to start sync';
       setTestResult({ success: false, message: errorMessage });
+    }
+  };
+
+  const handleSyncUsers = async () => {
+    setIsSyncingUsers(true);
+    setUserSyncResult(null);
+    
+    try {
+      // Start user sync (returns immediately)
+      const response = await api.post('/api/integrations/office365/sync/users');
+      
+      console.log('User sync started:', response.data);
+      
+      // Start polling for user sync status
+      const pollUserSyncStatus = () => {
+        const checkStatus = async () => {
+          try {
+            const statusResponse = await api.get('/api/integrations/office365/sync/users/status');
+            const status = statusResponse.data;
+            
+            if (status.isRunning) {
+              // Still running, check again in 2 seconds
+              setTimeout(checkStatus, 2000);
+            } else {
+              // Sync completed or failed
+              setIsSyncingUsers(false);
+              
+              if (status.status === 'completed' && status.results) {
+                setUserSyncResult({
+                  success: true,
+                  message: 'Office 365 user synchronization completed successfully',
+                  results: status.results
+                });
+                
+                // Reload stats to show updated employee count
+                if (config.isConfigured && config.isActive) {
+                  await loadStats();
+                }
+              } else if (status.status === 'failed') {
+                setUserSyncResult({
+                  success: false,
+                  message: status.error || 'User sync failed'
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error checking user sync status:', error);
+            setIsSyncingUsers(false);
+            setUserSyncResult({
+              success: false,
+              message: 'Failed to check sync status'
+            });
+          }
+        };
+        
+        // Start checking status
+        setTimeout(checkStatus, 2000);
+      };
+      
+      pollUserSyncStatus();
+      
+    } catch (error: any) {
+      setIsSyncingUsers(false);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to start user sync';
+      setUserSyncResult({ success: false, message: errorMessage });
     }
   };
 
@@ -499,18 +585,76 @@ export const Office365Config: React.FC<{
                       </div>
                     )}
                     {config.isConfigured && config.isActive && (
-                      <button
-                        onClick={handleSync}
-                        disabled={syncStatus.isRunning}
-                        className="flex items-center space-x-2 px-3 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${syncStatus.isRunning ? 'animate-spin' : ''}`} />
-                        <span>{syncStatus.isRunning ? 'Syncing...' : 'Sync Now'}</span>
-                      </button>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={handleSyncUsers}
+                          disabled={isSyncingUsers || syncStatus.isRunning}
+                          className="flex items-center space-x-2 px-3 py-2 bg-green-600 dark:bg-green-500 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Sync Office 365 users to employees table (runs in background)"
+                        >
+                          <Users className={`w-4 h-4 ${isSyncingUsers ? 'animate-pulse' : ''}`} />
+                          <span>{isSyncingUsers ? 'Syncing Users...' : 'Sync Users'}</span>
+                        </button>
+                        <button
+                          onClick={handleSync}
+                          disabled={syncStatus.isRunning || isSyncingUsers}
+                          className="flex items-center space-x-2 px-3 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${syncStatus.isRunning ? 'animate-spin' : ''}`} />
+                          <span>{syncStatus.isRunning ? 'Syncing Emails...' : 'Sync Emails'}</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
+
+              {/* User Sync Results */}
+              {userSyncResult && (
+                <div className={`p-4 rounded-lg border ${
+                  userSyncResult.success 
+                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+                    : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                }`}>
+                  <div className="flex items-start space-x-3">
+                    {userSyncResult.success ? (
+                      <CheckCircle className="w-5 h-5 text-green-500 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <h4 className={`font-medium ${
+                        userSyncResult.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'
+                      }`}>
+                        User Sync {userSyncResult.success ? 'Completed' : 'Failed'}
+                      </h4>
+                      <p className={`text-sm mt-1 ${
+                        userSyncResult.success ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'
+                      }`}>
+                        {userSyncResult.message}
+                      </p>
+                      {userSyncResult.success && userSyncResult.results && (
+                        <div className="mt-2 space-y-1 text-sm text-green-700 dark:text-green-300">
+                          <div>• Total Office 365 users: {userSyncResult.results.totalUsers}</div>
+                          <div>• New employees created: {userSyncResult.results.newEmployees}</div>
+                          <div>• Existing employees updated: {userSyncResult.results.updatedEmployees}</div>
+                          <div>• Emails linked to employees: {userSyncResult.results.linkedEmails}</div>
+                          <div>• Avatars generated for all users</div>
+                          {userSyncResult.results.errors?.length > 0 && (
+                            <div>• Errors: {userSyncResult.results.errors.length}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setUserSyncResult(null)}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Configuration Form */}
               <div className="space-y-4">
@@ -539,19 +683,37 @@ export const Office365Config: React.FC<{
                       type={showSecret ? 'text' : 'password'}
                       value={config.clientSecret}
                       onChange={(e) => setConfig(prev => ({ ...prev, clientSecret: e.target.value }))}
-                      placeholder="Enter client secret"
-                      className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
+                      placeholder={config.clientSecret === '********' ? 'Secret saved • Leave empty to keep existing' : 'Enter client secret'}
+                      className={`w-full px-3 py-2 pr-20 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
                         errors.clientSecret ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                       }`}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowSecret(!showSecret)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                    <div className="absolute inset-y-0 right-0 flex items-center">
+                      {config.clientSecret === '********' && (
+                        <button
+                          type="button"
+                          onClick={() => setConfig(prev => ({ ...prev, clientSecret: '' }))}
+                          className="px-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                          title="Clear to enter new secret"
+                        >
+                          Clear
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret(!showSecret)}
+                        className="pr-3 pl-1 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                      >
+                        {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
+                  {config.clientSecret === '********' && (
+                    <p className="mt-1 text-sm text-green-600 dark:text-green-400 flex items-center">
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      Client secret is configured. Leave empty to keep existing, or enter new secret to update.
+                    </p>
+                  )}
                   {errors.clientSecret && <p className="mt-1 text-sm text-red-500">{errors.clientSecret}</p>}
                 </div>
 
@@ -799,7 +961,7 @@ export const Office365Config: React.FC<{
                 <>
                   <button
                     onClick={handleTest}
-                    disabled={isTesting || !config.clientId || !config.clientSecret || !config.tenantId}
+                    disabled={isTesting || !config.clientId || !(config.clientSecret && config.clientSecret.trim()) || !config.tenantId}
                     className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <TestTube className={`w-4 h-4 ${isTesting ? 'animate-pulse' : ''}`} />

@@ -1,16 +1,59 @@
 import { NetworkData, NetworkNode, NetworkLink, Employee } from '../types';
 import { employeeAPI } from '../services/api';
 
+// Generate initials from name
+const getInitials = (name: string): string => {
+  return name
+    .split(' ')
+    .map(word => word[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+};
+
+// Generate color based on name
+const getBackgroundColor = (name: string): string => {
+  const colors = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
+    '#FFEAA7', '#DDA0DD', '#FFB6C1', '#87CEEB'
+  ];
+  const index = Math.abs(name.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) % colors.length;
+  return colors[index];
+};
+
+// Generate avatar data URL for employees without photos
+const generateAvatarDataURL = (name: string): string => {
+  const initials = getInitials(name);
+  const backgroundColor = getBackgroundColor(name);
+  
+  // Create SVG avatar
+  const svg = `
+    <svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="20" cy="20" r="20" fill="${backgroundColor}"/>
+      <text x="20" y="26" font-family="Arial, sans-serif" font-size="14" font-weight="bold" 
+            fill="white" text-anchor="middle">${initials}</text>
+    </svg>
+  `;
+  
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
+};
+
 // Function to create network nodes from employees
 export const createNetworkNodes = (employees: Employee[]): NetworkNode[] => {
-  return employees.map(employee => ({
-    id: employee.id,
-    name: employee.name,
-    department: employee.department,
-    riskScore: employee.riskScore,
-    riskLevel: employee.riskLevel,
-    photo: employee.photoUrl || employee.photo
-  }));
+  return employees.map(employee => {
+    // Use employee photo if available, otherwise generate initials avatar
+    const photoUrl = employee.photoUrl || employee.photo;
+    const avatar = photoUrl ? photoUrl : generateAvatarDataURL(employee.name);
+    
+    return {
+      id: employee.id,
+      name: employee.name,
+      department: employee.department,
+      riskScore: employee.riskScore,
+      riskLevel: employee.riskLevel,
+      photo: avatar
+    };
+  });
 };
 
 // Function to generate network links based on employee relationships

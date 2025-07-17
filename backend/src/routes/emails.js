@@ -54,6 +54,7 @@ const riskAnalyzer = require('../services/emailRiskAnalyzer');
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
+    console.log('📧 Emails API called with query:', req.query);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const offset = (page - 1) * limit;
@@ -95,8 +96,11 @@ router.get('/', requireAuth, async (req, res) => {
       FROM email_communications ec 
       ${whereClause}
     `;
+    console.log('📊 Count query:', countQuery);
+    console.log('📊 Query params:', queryParams);
     const countResult = await query(countQuery, queryParams);
     const total = parseInt(countResult.rows[0].total);
+    console.log('📊 Total emails found:', total);
 
     // Get emails with pagination
     queryParams.push(limit, offset);
@@ -110,7 +114,7 @@ router.get('/', requireAuth, async (req, res) => {
         v.severity as violation_severity
       FROM email_communications ec
       LEFT JOIN employees e ON ec.sender_employee_id = e.id
-      LEFT JOIN violations v ON ec.violation_trigger_id = v.id
+      LEFT JOIN violations v ON (v.source = 'email_analysis' AND v.metadata->>'emailId' = ec.message_id)
       ${whereClause}
       ORDER BY ec.sent_at DESC
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
@@ -408,6 +412,91 @@ router.get('/:id', requireAuth, async (req, res) => {
     res.status(500).json({
       error: 'Failed to fetch email',
       code: 'EMAIL_FETCH_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/emails/message/{messageId}:
+ *   get:
+ *     summary: Get email by message ID
+ *     description: Retrieve email details by message ID for evidence viewing
+ *     tags: [Emails]
+ *     security:
+ *       - sessionAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Email message ID
+ *     responses:
+ *       200:
+ *         description: Email retrieved successfully
+ *       404:
+ *         description: Email not found
+ */
+router.get('/message/:messageId', requireAuth, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    
+    console.log('📧 Fetching email details for:', messageId);
+    
+    const result = await query(`
+      SELECT 
+        ec.*,
+        e.name as sender_name,
+        e.department as sender_department
+      FROM email_communications ec
+      LEFT JOIN employees e ON ec.sender_employee_id = e.id
+      WHERE ec.message_id = $1
+    `, [messageId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Email not found',
+        code: 'EMAIL_NOT_FOUND'
+      });
+    }
+
+    const email = result.rows[0];
+    
+    res.json({
+      id: email.id,
+      messageId: email.message_id,
+      threadId: email.thread_id,
+      integrationSource: email.integration_source,
+      sender: {
+        employeeId: email.sender_employee_id,
+        email: email.sender_email,
+        name: email.sender_name,
+        department: email.sender_department
+      },
+      recipients: email.recipients,
+      subject: email.subject,
+      bodyText: email.body_text,
+      bodyHtml: email.body_html,
+      attachments: email.attachments,
+      sentAt: email.sent_at,
+      receivedAt: email.received_at,
+      riskScore: email.risk_score,
+      riskFlags: email.risk_flags,
+      category: email.category,
+      isFlagged: email.is_flagged,
+      isAnalyzed: email.is_analyzed,
+      analyzedAt: email.analyzed_at,
+      analyzerVersion: email.analyzer_version,
+      syncStatus: email.sync_status,
+      createdAt: email.created_at
+    });
+
+  } catch (error) {
+    console.error('Get email by ID error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch email',
+      code: 'EMAIL_ERROR'
     });
   }
 });

@@ -67,17 +67,19 @@ router.get('/office365/config', requireAdmin, async (req, res) => {
       return res.json({
         isConfigured: false,
         isActive: false,
+        hasClientSecret: false,
         clientId: '',
         tenantId: '',
         status: 'not_configured'
       });
     }
 
-    // Don't send client secret in response
+    // Don't send client secret in response for security
     const config = { ...result.rows[0].value };
-    if (config.clientSecret) {
-      config.clientSecret = '********';
-    }
+    const hasClientSecret = Boolean(config.clientSecret && config.clientSecret.trim());
+    
+    // Remove client secret from response entirely
+    delete config.clientSecret;
 
     // Determine status based on configuration and active state
     let status = 'disconnected';
@@ -92,6 +94,7 @@ router.get('/office365/config', requireAdmin, async (req, res) => {
     res.json({
       isConfigured: Boolean(config.isConfigured),
       isActive: Boolean(config.isActive),
+      hasClientSecret,
       ...config,
       status
     });
@@ -219,10 +222,11 @@ router.post('/office365/test', requireAdmin, async (req, res) => {
 
     const config = configResult.rows[0].value;
 
-    if (!config.isActive) {
+    // Check if configuration has required fields (regardless of isActive status)
+    if (!config.clientId || !config.clientSecret || !config.tenantId) {
       return res.status(400).json({
-        error: 'Office 365 integration is disabled',
-        code: 'O365_DISABLED'
+        error: 'Office 365 configuration incomplete. Please ensure Client ID, Client Secret, and Tenant ID are all configured.',
+        code: 'O365_INCOMPLETE_CONFIG'
       });
     }
 
@@ -386,6 +390,132 @@ router.post('/office365/sync', requireAdmin, async (req, res) => {
 
 /**
  * @swagger
+ * /api/integrations/office365/sync/users:
+ *   post:
+ *     summary: Sync Office 365 users to employees table
+ *     description: Fetch all users from Office 365 directory and sync them to the employees table
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: User synchronization completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 results:
+ *                   type: object
+ *                   properties:
+ *                     totalUsers:
+ *                       type: integer
+ *                     newEmployees:
+ *                       type: integer
+ *                     updatedEmployees:
+ *                       type: integer
+ *                     linkedEmails:
+ *                       type: integer
+ *                     errors:
+ *                       type: array
+ */
+router.post('/office365/sync/users', requireAdmin, async (req, res) => {
+  try {
+    // Load current configuration
+    const configResult = await query(`
+      SELECT value FROM app_settings WHERE key = 'office365_config'
+    `);
+
+    if (configResult.rows.length === 0) {
+      return res.status(400).json({
+        error: 'Office 365 not configured',
+        code: 'O365_NOT_CONFIGURED'
+      });
+    }
+
+    const config = configResult.rows[0].value;
+
+    if (!config.isConfigured) {
+      return res.status(400).json({
+        error: 'Office 365 not configured',
+        code: 'O365_NOT_CONFIGURED'
+      });
+    }
+
+    if (!config.isActive) {
+      return res.status(400).json({
+        error: 'Office 365 integration is disabled',
+        code: 'O365_DISABLED'
+      });
+    }
+
+    // Initialize connector
+    await office365Connector.initialize(config);
+
+    // Start user synchronization (run in background)
+    const syncPromise = office365Connector.syncUsersToEmployees();
+
+    // Store sync job info
+    const syncJobResult = await query(`
+      INSERT INTO sync_jobs (
+        integration_type, status, parameters, started_at, started_by
+      ) VALUES ($1, $2, $3, NOW(), $4)
+      RETURNING id
+    `, [
+      'office365_users',
+      'running',
+      JSON.stringify({ syncType: 'users' }),
+      req.user.id
+    ]);
+
+    const syncJobId = syncJobResult.rows[0].id;
+
+    // Handle sync completion (don't await)
+    syncPromise.then(async (results) => {
+      await query(`
+        UPDATE sync_jobs 
+        SET 
+          status = $1, 
+          completed_at = NOW(), 
+          results = $2
+        WHERE id = $3
+      `, ['completed', JSON.stringify(results), syncJobId]);
+
+      console.log('✅ Office 365 user sync job completed:', results);
+    }).catch(async (error) => {
+      await query(`
+        UPDATE sync_jobs 
+        SET 
+          status = $1, 
+          completed_at = NOW(), 
+          error_message = $2
+        WHERE id = $3
+      `, ['failed', error.message, syncJobId]);
+
+      console.error('❌ Office 365 user sync job failed:', error);
+    });
+
+    res.json({
+      message: 'Office 365 user synchronization started',
+      syncJobId: syncJobId,
+      syncType: 'users',
+      startedAt: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Office 365 user sync error:', error);
+    res.status(500).json({
+      error: 'Failed to start Office 365 user sync',
+      message: error.message,
+      code: 'O365_USER_SYNC_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/integrations/office365/toggle:
  *   post:
  *     summary: Toggle Office 365 integration active state
@@ -493,51 +623,168 @@ router.get('/office365/sync/status', requireAuth, async (req, res) => {
         isRunning: false,
         status: 'not_configured',
         lastSync: null,
-        error: null
+        error: null,
+        progress: null
       });
     }
 
-    // Get the latest sync job
-    const result = await query(`
-      SELECT 
-        status,
-        started_at,
-        completed_at,
-        error_message,
-        progress,
-        records_processed
-      FROM sync_jobs 
-      WHERE integration_type = 'office365' 
-      ORDER BY started_at DESC 
-      LIMIT 1
-    `);
+    const config = configResult.rows[0].value;
+    if (!config.isConfigured || !config.isActive) {
+      return res.json({
+        isRunning: false,
+        status: 'disabled',
+        lastSync: null,
+        error: null,
+        progress: null
+      });
+    }
 
-    if (result.rows.length === 0) {
+    // Get the latest sync job - handle case where table might not exist or be empty
+    try {
+      const result = await query(`
+        SELECT 
+          status,
+          started_at,
+          completed_at,
+          error_message,
+          results
+        FROM sync_jobs 
+        WHERE integration_type = 'office365' 
+        ORDER BY started_at DESC 
+        LIMIT 1
+      `);
+
+      if (result.rows.length === 0) {
+        return res.json({
+          isRunning: false,
+          status: 'never_synced',
+          lastSync: null,
+          error: null,
+          progress: null
+        });
+      }
+
+      const job = result.rows[0];
+      return res.json({
+        isRunning: job.status === 'running',
+        status: job.status,
+        lastSync: job.completed_at || job.started_at,
+        error: job.error_message,
+        progress: job.results ? JSON.parse(job.results) : null
+      });
+
+    } catch (tableError) {
+      // sync_jobs table might not exist yet
+      console.log('sync_jobs table not found or empty, returning default status');
       return res.json({
         isRunning: false,
         status: 'never_synced',
         lastSync: null,
-        error: null
+        error: null,
+        progress: null
       });
     }
 
-    const job = result.rows[0];
-    const isRunning = job.status === 'running' || job.status === 'starting';
-
-    res.json({
-      isRunning,
-      status: job.status,
-      lastSync: job.completed_at || job.started_at,
-      error: job.error_message,
-      progress: job.progress,
-      recordsProcessed: job.records_processed
-    });
-
   } catch (error) {
-    console.error('Get Office 365 sync status error:', error);
+    console.error('Office 365 sync status error:', error);
     res.status(500).json({
       error: 'Failed to fetch sync status',
       code: 'SYNC_STATUS_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/integrations/office365/sync/users/status:
+ *   get:
+ *     summary: Get Office 365 user sync status
+ *     description: Get the status of the latest Office 365 user synchronization job
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: User sync status retrieved successfully
+ */
+router.get('/office365/sync/users/status', requireAuth, async (req, res) => {
+  try {
+    // First check if Office 365 is configured
+    const configResult = await query(`
+      SELECT value FROM app_settings WHERE key = 'office365_config'
+    `);
+
+    if (configResult.rows.length === 0) {
+      return res.json({
+        isRunning: false,
+        status: 'not_configured',
+        lastSync: null,
+        error: null,
+        results: null
+      });
+    }
+
+    const config = configResult.rows[0].value;
+    if (!config.isConfigured || !config.isActive) {
+      return res.json({
+        isRunning: false,
+        status: 'disabled',
+        lastSync: null,
+        error: null,
+        results: null
+      });
+    }
+
+    // Get the latest user sync job
+    try {
+      const result = await query(`
+        SELECT 
+          status,
+          started_at,
+          completed_at,
+          error_message,
+          results
+        FROM sync_jobs 
+        WHERE integration_type = 'office365_users' 
+        ORDER BY started_at DESC 
+        LIMIT 1
+      `);
+
+      if (result.rows.length === 0) {
+        return res.json({
+          isRunning: false,
+          status: 'never_synced',
+          lastSync: null,
+          error: null,
+          results: null
+        });
+      }
+
+      const job = result.rows[0];
+      return res.json({
+        isRunning: job.status === 'running',
+        status: job.status,
+        lastSync: job.completed_at || job.started_at,
+        error: job.error_message,
+        results: job.results ? JSON.parse(job.results) : null
+      });
+
+    } catch (tableError) {
+      console.log('sync_jobs table not found or empty, returning default status');
+      return res.json({
+        isRunning: false,
+        status: 'never_synced',
+        lastSync: null,
+        error: null,
+        results: null
+      });
+    }
+
+  } catch (error) {
+    console.error('Office 365 user sync status error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch user sync status',
+      code: 'USER_SYNC_STATUS_ERROR'
     });
   }
 });
@@ -605,77 +852,140 @@ router.get('/status', async (req, res) => {
  */
 router.get('/office365/stats', requireAuth, async (req, res) => {
   try {
-    // Get email statistics
-    const emailStatsResult = await query(`
-      SELECT 
-        COUNT(*) as total_emails,
-        COUNT(*) FILTER (WHERE is_analyzed = true) as analyzed_emails,
-        COUNT(*) FILTER (WHERE risk_score >= 80) as critical_emails,
-        COUNT(*) FILTER (WHERE risk_score >= 60 AND risk_score < 80) as high_risk_emails,
-        COUNT(*) FILTER (WHERE category = 'policy_violation') as violation_emails,
-        AVG(risk_score) as avg_risk_score
-      FROM email_communications 
-      WHERE integration_source = 'office365'
-      AND created_at >= NOW() - INTERVAL '30 days'
+    // Default stats for when no data exists yet
+    const defaultStats = {
+      totalUsers: 0,
+      emailsProcessed: 0,
+      violationsDetected: 0,
+      lastSyncDuration: 0,
+      riskDistribution: {
+        high: 0,
+        medium: 0,
+        low: 0
+      }
+    };
+
+    // Check if Office 365 is configured
+    const configResult = await query(`
+      SELECT value FROM app_settings WHERE key = 'office365_config'
     `);
 
-    // Get recent violations
-    const violationsResult = await query(`
-      SELECT 
-        COUNT(*) as total_violations,
-        COUNT(*) FILTER (WHERE severity = 'Critical') as critical_violations,
-        COUNT(*) FILTER (WHERE severity = 'High') as high_violations
-      FROM violations 
-      WHERE source = 'email_analysis'
-      AND created_at >= NOW() - INTERVAL '30 days'
-    `);
+    if (configResult.rows.length === 0) {
+      return res.json(defaultStats);
+    }
 
-    // Get top risk categories
-    const riskCategoriesResult = await query(`
-      SELECT 
-        category,
-        COUNT(*) as count,
-        AVG(risk_score) as avg_risk_score
-      FROM email_communications 
-      WHERE integration_source = 'office365'
-      AND created_at >= NOW() - INTERVAL '30 days'
-      GROUP BY category
-      ORDER BY count DESC
-    `);
+    const config = configResult.rows[0].value;
+    if (!config.isConfigured || !config.isActive) {
+      return res.json(defaultStats);
+    }
 
-    const emailStats = emailStatsResult.rows[0];
-    const violationStats = violationsResult.rows[0];
+    try {
+      // Get email statistics - handle case where table might not exist or be empty
+      const emailStatsResult = await query(`
+        SELECT 
+          COUNT(*) as total_emails,
+          COUNT(*) FILTER (WHERE risk_score >= 70) as high_risk,
+          COUNT(*) FILTER (WHERE risk_score >= 40 AND risk_score < 70) as medium_risk,
+          COUNT(*) FILTER (WHERE risk_score < 40) as low_risk
+        FROM email_communications 
+        WHERE integration_source = 'office365'
+        AND created_at >= NOW() - INTERVAL '30 days'
+      `);
 
-    res.json({
-      emailStatistics: {
-        totalEmails: parseInt(emailStats.total_emails),
-        analyzedEmails: parseInt(emailStats.analyzed_emails),
-        criticalEmails: parseInt(emailStats.critical_emails),
-        highRiskEmails: parseInt(emailStats.high_risk_emails),
-        violationEmails: parseInt(emailStats.violation_emails),
-        averageRiskScore: Math.round(emailStats.avg_risk_score || 0)
-      },
-      violationStatistics: {
-        totalViolations: parseInt(violationStats.total_violations),
-        criticalViolations: parseInt(violationStats.critical_violations),
-        highViolations: parseInt(violationStats.high_violations)
-      },
-      riskCategories: riskCategoriesResult.rows.map(row => ({
-        category: row.category,
-        count: parseInt(row.count),
-        averageRiskScore: Math.round(row.avg_risk_score)
-      })),
-      period: 'Last 30 days',
-      generatedAt: new Date().toISOString()
-    });
+      // Get violations count
+      const violationsResult = await query(`
+        SELECT COUNT(*) as total_violations
+        FROM violations 
+        WHERE source = 'office365'
+        AND created_at >= NOW() - INTERVAL '30 days'
+      `);
+
+      // Get user count from latest sync
+      const userCountResult = await query(`
+        SELECT 
+          (results->>'totalUsers')::integer as user_count
+        FROM sync_jobs 
+        WHERE integration_type = 'office365' 
+        AND status = 'completed'
+        ORDER BY completed_at DESC 
+        LIMIT 1
+      `);
+
+      const emailStats = emailStatsResult.rows[0] || {};
+      const violationStats = violationsResult.rows[0] || {};
+      const userStats = userCountResult.rows[0] || {};
+
+      res.json({
+        totalUsers: userStats.user_count || 0,
+        emailsProcessed: parseInt(emailStats.total_emails) || 0,
+        violationsDetected: parseInt(violationStats.total_violations) || 0,
+        lastSyncDuration: 0,
+        riskDistribution: {
+          high: parseInt(emailStats.high_risk) || 0,
+          medium: parseInt(emailStats.medium_risk) || 0,
+          low: parseInt(emailStats.low_risk) || 0
+        }
+      });
+
+    } catch (tableError) {
+      // Tables might not exist yet or have no data
+      console.log('Office 365 stats tables not found or empty, returning default stats');
+      res.json(defaultStats);
+    }
 
   } catch (error) {
-    console.error('Get Office 365 stats error:', error);
+    console.error('Office 365 stats error:', error);
     res.status(500).json({
       error: 'Failed to fetch statistics',
       code: 'O365_STATS_ERROR'
     });
   }
+});
+
+/**
+ * @swagger
+ * /api/avatars/{filename}:
+ *   get:
+ *     summary: Serve user avatar images
+ *     description: Serve stored user profile photos
+ *     tags: [Integrations]
+ *     parameters:
+ *       - in: path
+ *         name: filename
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Avatar filename
+ *     responses:
+ *       200:
+ *         description: Avatar image
+ *         content:
+ *           image/jpeg:
+ *             schema:
+ *               type: string
+ *               format: binary
+ */
+router.get('/avatars/:filename', (req, res) => {
+  const path = require('path');
+  const fs = require('fs');
+  
+  const filename = req.params.filename;
+  const filepath = path.join(__dirname, '../../public/avatars', filename);
+  
+  // Security check: ensure filename doesn't contain path traversal
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  
+  // Check if file exists
+  if (!fs.existsSync(filepath)) {
+    return res.status(404).json({ error: 'Avatar not found' });
+  }
+  
+  // Serve the image
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+  res.sendFile(filepath);
 });
 
 module.exports = router; 

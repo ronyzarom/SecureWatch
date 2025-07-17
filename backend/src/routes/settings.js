@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../utils/database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const nodemailer = require('nodemailer');
 
 const router = express.Router();
 
@@ -227,12 +228,26 @@ router.put('/email/config', requireAdmin, async (req, res) => {
       });
     }
 
+    // Get existing config to preserve password if needed
+    let existingPassword = '';
+    try {
+      const existingResult = await query(`
+        SELECT value FROM app_settings WHERE key = 'email_config'
+      `);
+      if (existingResult.rows.length > 0) {
+        const existingConfig = existingResult.rows[0].value;
+        existingPassword = existingConfig.password || '';
+      }
+    } catch (err) {
+      // No existing config, continue with empty password
+    }
+
     const emailConfig = {
       host: host.trim(),
       port: parseInt(port),
       encryption: encryption || 'ssl',
       username: username.trim(),
-      password: password || '' // Allow empty password for testing
+      password: password || existingPassword // Use existing password if no new password provided
     };
 
     if (emailConfig.port < 1 || emailConfig.port > 65535) {
@@ -272,6 +287,92 @@ router.put('/email/config', requireAdmin, async (req, res) => {
     res.status(500).json({
       error: 'Failed to update email configuration',
       code: 'EMAIL_UPDATE_ERROR'
+    });
+  }
+});
+
+// Test email configuration
+router.post('/email/test', requireAdmin, async (req, res) => {
+  try {
+    const { host, port, encryption, username, password } = req.body;
+
+    if (!host || !port || !username) {
+      return res.status(400).json({
+        error: 'Host, port, and username are required for testing',
+        code: 'MISSING_EMAIL_FIELDS'
+      });
+    }
+
+    // Get saved password if no password provided
+    let testPassword = password;
+    if (!testPassword) {
+      try {
+        const savedResult = await query(`
+          SELECT value FROM app_settings WHERE key = 'email_config'
+        `);
+        if (savedResult.rows.length > 0) {
+          const savedConfig = savedResult.rows[0].value;
+          testPassword = savedConfig.password || '';
+        }
+      } catch (err) {
+        // Continue with empty password if no saved config
+      }
+    }
+
+    if (!testPassword) {
+      return res.status(400).json({
+        error: 'Password is required for testing',
+        code: 'MISSING_PASSWORD'
+      });
+    }
+
+    const testConfig = {
+      host: host.trim(),
+      port: parseInt(port),
+      secure: encryption === 'ssl', // true for SSL (port 465), false for other ports
+      auth: {
+        user: username.trim(),
+        pass: testPassword
+      },
+      // Allow self-signed certificates for all connection types
+      tls: {
+        rejectUnauthorized: false
+      }
+    };
+
+    // Handle TLS configuration
+    if (encryption === 'tls') {
+      testConfig.secure = false;
+      testConfig.tls = {
+        rejectUnauthorized: false,
+        ciphers: 'SSLv3'
+      };
+    }
+
+    // Handle no encryption
+    if (encryption === 'none') {
+      testConfig.secure = false;
+      testConfig.tls = {
+        rejectUnauthorized: false
+      };
+    }
+
+    // Create transporter and test connection
+    const transporter = nodemailer.createTransport(testConfig);
+    
+    // Test the connection
+    await transporter.verify();
+
+    res.json({
+      message: 'Email connection test successful',
+      status: 'success'
+    });
+
+  } catch (error) {
+    console.error('Email connection test error:', error);
+    res.status(400).json({
+      error: error.message || 'Email connection test failed',
+      code: 'EMAIL_TEST_FAILED'
     });
   }
 });

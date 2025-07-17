@@ -86,27 +86,51 @@ const requireRole = (requiredRole) => {
 };
 
 // Middleware to require admin role
-const requireAdmin = requireRole('admin');
+const requireAdmin = (req, res, next) => {
+  // First check authentication
+  requireAuth(req, res, (err) => {
+    if (err || res.headersSent) {
+      // requireAuth already handled the response
+      return;
+    }
+    
+    // Now check admin role
+    if (req.user && req.user.role === 'admin') {
+      return next();
+    }
+    
+    // User is authenticated but not admin
+    return res.status(403).json({
+      error: 'Admin role required',
+      code: 'INSUFFICIENT_PERMISSIONS',
+      userRole: req.user?.role,
+      requiredRole: 'admin'
+    });
+  });
+};
 
 // Middleware to require analyst or admin role
 const requireAnalyst = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({ 
-      error: 'Authentication required',
-      code: 'NOT_AUTHENTICATED'
-    });
-  }
-
-  if (!['admin', 'analyst'].includes(req.user.role)) {
-    return res.status(403).json({ 
+  // First check authentication
+  requireAuth(req, res, (err) => {
+    if (err || res.headersSent) {
+      // requireAuth already handled the response
+      return;
+    }
+    
+    // Now check analyst or admin role
+    if (req.user && ['admin', 'analyst'].includes(req.user.role)) {
+      return next();
+    }
+    
+    // User is authenticated but doesn't have required role
+    return res.status(403).json({
       error: 'Analyst or Admin role required',
       code: 'INSUFFICIENT_PERMISSIONS',
-      userRole: req.user.role,
+      userRole: req.user?.role,
       requiredRoles: ['admin', 'analyst']
     });
-  }
-
-  next();
+  });
 };
 
 // Optional auth middleware (doesn't block if not authenticated)

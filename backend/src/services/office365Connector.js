@@ -136,6 +136,85 @@ class Office365Connector {
   }
 
   /**
+   * Get user profile photos
+   */
+  async getUserPhoto(userId) {
+    if (!this.graphClient) {
+      await this.authenticate();
+    }
+
+    try {
+      const photo = await this.graphClient
+        .api(`/users/${userId}/photo/$value`)
+        .get();
+
+      return photo;
+
+    } catch (error) {
+      console.error(`❌ Error fetching photo for user ${userId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate avatar URL for user with multiple fallback options
+   */
+  async generateAvatarUrl(user) {
+    const email = user.mail || user.userPrincipalName;
+    const name = user.displayName || email.split('@')[0];
+    
+    // Create consistent filename
+    const crypto = require('crypto');
+    const emailHash = crypto.createHash('md5').update(email.toLowerCase().trim()).digest('hex');
+    const filename = `${emailHash}.jpg`;
+    const path = require('path');
+    const filepath = path.join(__dirname, '../../public/avatars', filename);
+    
+    // Check if avatar already exists locally
+    const fs = require('fs');
+    if (fs.existsSync(filepath)) {
+      console.log(`✅ Using existing avatar for ${name}: ${filename}`);
+      return `/api/integrations/avatars/${filename}`;
+    }
+    
+    try {
+      // First try: Office 365 profile photo
+      const photo = await this.getUserPhoto(user.id);
+      if (photo) {
+        // Save the photo to local filesystem
+        
+        // Ensure directory exists
+        const dir = path.dirname(filepath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        
+        // Save the photo
+        fs.writeFileSync(filepath, photo);
+        
+        console.log(`✅ Saved Office 365 photo for ${name}: ${filename}`);
+        return `/api/integrations/avatars/${filename}`;
+      }
+    } catch (error) {
+      console.log(`ℹ️ No Office 365 photo for ${name}, using fallbacks`);
+    }
+
+    // Second try: Gravatar (based on email hash)
+    
+    // Third option: Generated avatar service
+    const initials = name.split(' ').map(word => word[0]).join('').substring(0, 2).toUpperCase();
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FFEAA7', 'DDA0DD', 'FFB6C1', '87CEEB'];
+    const colorIndex = Math.abs(name.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) % colors.length;
+    const backgroundColor = colors[colorIndex];
+    
+    // Using UI Avatars service as fallback
+    const generatedUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&size=200&background=${backgroundColor}&color=ffffff&bold=true&font-size=0.6`;
+    
+    // For now, we'll prefer Gravatar with generated fallback
+    return `https://www.gravatar.com/avatar/${emailHash}?s=200&d=${encodeURIComponent(generatedUrl)}`;
+  }
+
+  /**
    * Get emails for a specific user
    */
   async getUserEmails(userId, options = {}) {
@@ -573,6 +652,112 @@ class Office365Connector {
         message: 'Office 365 connection failed',
         error: error.message
       };
+    }
+  }
+
+  /**
+   * Sync Office 365 users to employees table
+   */
+  async syncUsersToEmployees() {
+    try {
+      console.log('👥 Starting Office 365 user sync to employees table...');
+
+      // Get all users from Office 365
+      const office365Users = await this.getAllUsers();
+      
+      const results = {
+        totalUsers: office365Users.length,
+        newEmployees: 0,
+        updatedEmployees: 0,
+        errors: []
+      };
+
+      for (const user of office365Users) {
+        try {
+          // Skip users without email addresses
+          if (!user.mail && !user.userPrincipalName) {
+            results.errors.push({
+              user: user.displayName,
+              error: 'No email address found'
+            });
+            continue;
+          }
+
+          const email = user.mail || user.userPrincipalName;
+          const name = user.displayName || email.split('@')[0];
+          const department = user.department || 'General';
+          const jobTitle = user.jobTitle || 'Employee';
+
+          // Generate avatar URL for the user
+          console.log(`🖼️ Generating avatar for ${name}...`);
+          const photoUrl = await this.generateAvatarUrl(user);
+
+          // Check if employee already exists
+          const existingEmployee = await query(
+            'SELECT id FROM employees WHERE email = $1',
+            [email]
+          );
+
+          if (existingEmployee.rows.length > 0) {
+            // Update existing employee
+            await query(`
+              UPDATE employees 
+              SET name = $1, department = $2, job_title = $3, photo_url = $4, updated_at = NOW()
+              WHERE email = $5
+            `, [name, department, jobTitle, photoUrl, email]);
+            
+            results.updatedEmployees++;
+            console.log(`✅ Updated employee: ${name} (${email}) with avatar`);
+          } else {
+            // Create new employee
+            await query(`
+              INSERT INTO employees (name, email, department, job_title, photo_url, risk_score, risk_level, is_active, created_at, updated_at)
+              VALUES ($1, $2, $3, $4, $5, 0, 'Low', true, NOW(), NOW())
+            `, [name, email, department, jobTitle, photoUrl]);
+            
+            results.newEmployees++;
+            console.log(`✅ Created employee: ${name} (${email}) with avatar`);
+          }
+
+        } catch (userError) {
+          console.error(`❌ Error processing user ${user.displayName}:`, userError);
+          results.errors.push({
+            user: user.displayName,
+            error: userError.message
+          });
+        }
+      }
+
+      // Now link existing emails to the synced employees
+      console.log('🔗 Linking existing emails to synced employees...');
+      await query(`
+        UPDATE email_communications 
+        SET sender_employee_id = employees.id
+        FROM employees 
+        WHERE email_communications.sender_email = employees.email
+        AND email_communications.sender_employee_id IS NULL
+      `);
+
+      const linkedEmails = await query(`
+        SELECT COUNT(*) as linked_count 
+        FROM email_communications 
+        WHERE sender_employee_id IS NOT NULL
+      `);
+
+      results.linkedEmails = linkedEmails.rows[0].linked_count;
+
+      console.log(`✅ Office 365 user sync completed:
+        - Total users: ${results.totalUsers}
+        - New employees: ${results.newEmployees}
+        - Updated employees: ${results.updatedEmployees}
+        - Linked emails: ${results.linkedEmails}
+        - Errors: ${results.errors.length}`);
+
+      return results;
+
+    } catch (error) {
+      console.error('❌ Error syncing Office 365 users to employees:', error);
+      throw error;
     }
   }
 }

@@ -166,7 +166,7 @@ router.get('/', async (req, res) => {
         e.risk_score,
         e.risk_level,
         e.last_activity,
-        e.photo_url,
+        e.photo_url as photo,
         COUNT(v.id) as violation_count,
         COUNT(CASE WHEN v.status = 'Active' THEN 1 END) as active_violations
       FROM employees e
@@ -197,7 +197,7 @@ router.get('/', async (req, res) => {
         riskScore: row.risk_score,
         riskLevel: row.risk_level,
         lastActivity: row.last_activity,
-        photoUrl: row.photo_url,
+        photo: row.photo,
         violationCount: parseInt(row.violation_count),
         activeViolations: parseInt(row.active_violations)
       })),
@@ -235,7 +235,7 @@ router.get('/:id', async (req, res) => {
     // Get employee details
     const employeeResult = await query(`
       SELECT 
-        id, name, email, department, job_title, photo_url,
+        id, name, email, department, job_title, photo_url as photo,
         risk_score, risk_level, last_activity, is_active,
         created_at, updated_at
       FROM employees 
@@ -255,7 +255,7 @@ router.get('/:id', async (req, res) => {
     const violationsResult = await query(`
       SELECT 
         id, type, severity, description, status, 
-        evidence, email_evidence_ids, created_at, resolved_at
+        evidence, metadata, source, created_at, resolved_at
       FROM violations 
       WHERE employee_id = $1
       ORDER BY created_at DESC
@@ -279,7 +279,7 @@ router.get('/:id', async (req, res) => {
         email: employee.email,
         department: employee.department,
         jobTitle: employee.job_title,
-        photoUrl: employee.photo_url,
+        photo: employee.photo,
         riskScore: employee.risk_score,
         riskLevel: employee.risk_level,
         lastActivity: employee.last_activity,
@@ -294,7 +294,8 @@ router.get('/:id', async (req, res) => {
         description: row.description,
         status: row.status,
         evidence: row.evidence,
-        emailEvidenceIds: row.email_evidence_ids || [],
+        metadata: row.metadata,
+        source: row.source,
         createdAt: row.created_at,
         resolvedAt: row.resolved_at
       })),

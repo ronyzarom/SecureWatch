@@ -529,7 +529,7 @@ export const IntegrationsPage: React.FC = () => {
       )}
 
       {/* Office 365 Configuration Modal */}
-      {showConfigModal && selectedIntegration?.name === 'Microsoft Office 365' && (
+      {showConfigModal && selectedIntegration?.name === 'Microsoft Office 365' && isAuthenticated && (
         <Office365Config 
           onClose={handleCloseConfigModal}
           isAuthenticated={isAuthenticated}

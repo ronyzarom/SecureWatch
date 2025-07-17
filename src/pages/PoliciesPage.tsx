@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Clock
 } from 'lucide-react';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 
 interface Policy {
   id: number;
@@ -104,6 +105,14 @@ export const PoliciesPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [departments, setDepartments] = useState<Array<{id: number, name: string}>>([]);
   const [users, setUsers] = useState<Array<{id: number, name: string, email: string}>>([]);
+
+  // Confirmation modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalData, setConfirmModalData] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Fetch policies from API
   const fetchPolicies = async () => {
@@ -528,28 +537,34 @@ export const PoliciesPage: React.FC = () => {
 
   // Handle delete policy
   const handleDeletePolicy = async (policyId: number, policyName: string) => {
-    if (!confirm(`Are you sure you want to delete the policy "${policyName}"?\n\nThis action cannot be undone.`)) {
-      return;
-    }
+    setConfirmModalData({
+      title: 'Delete Policy',
+      message: `Are you sure you want to delete the policy "${policyName}"?\n\nThis action cannot be undone.`,
+      onConfirm: async () => {
+        setShowConfirmModal(false);
+        setConfirmModalData(null);
+        
+        try {
+          const response = await fetch(`/api/policies/${policyId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+          });
 
-    try {
-      const response = await fetch(`/api/policies/${policyId}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to delete policy');
+          }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete policy');
+          // Success - refresh the policies list
+          fetchPolicies();
+          
+        } catch (err) {
+          console.error('Error deleting policy:', err);
+          setError(err instanceof Error ? err.message : 'Failed to delete policy');
+        }
       }
-
-      // Success - refresh the policies list
-      fetchPolicies();
-      
-    } catch (err) {
-      console.error('Error deleting policy:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete policy');
-    }
+    });
+    setShowConfirmModal(true);
   };
 
   // Load policies on component mount
@@ -1681,6 +1696,23 @@ export const PoliciesPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModalData && (
+        <ConfirmationModal
+          isOpen={showConfirmModal}
+          onConfirm={confirmModalData.onConfirm}
+          onCancel={() => {
+            setShowConfirmModal(false);
+            setConfirmModalData(null);
+          }}
+          title={confirmModalData.title}
+          message={confirmModalData.message}
+          confirmText="OK"
+          cancelText="Cancel"
+          type="danger"
+        />
       )}
     </div>
   );

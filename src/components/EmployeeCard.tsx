@@ -33,7 +33,7 @@ const Avatar: React.FC<{ employee: Employee }> = ({ employee }) => {
     return colors[index];
   };
 
-  const photoUrl = employee.photoUrl || employee.photo;
+  const photoUrl = employee.photo;
   const initials = getInitials(employee.name);
   const backgroundColor = getBackgroundColor(employee.name);
 

@@ -258,11 +258,65 @@ router.get('/me', requireAuth, (req, res) => {
 });
 
 // Check session status
-router.get('/status', (req, res) => {
-  res.json({
-    authenticated: !!req.session?.userId,
-    sessionId: req.session?.id || null
-  });
+router.get('/status', async (req, res) => {
+  try {
+    // Check if user is logged in
+    if (!req.session || !req.session.userId) {
+      return res.json({
+        authenticated: false,
+        sessionId: null
+      });
+    }
+
+    // Get user details from database (same check as requireAuth middleware)
+    const result = await query(
+      'SELECT id, email, name, role, department, is_active FROM users WHERE id = $1',
+      [req.session.userId]
+    );
+
+    if (result.rows.length === 0) {
+      // User not found, clear session
+      req.session.destroy();
+      return res.json({
+        authenticated: false,
+        sessionId: null,
+        error: 'User not found'
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Check if user is active
+    if (!user.is_active) {
+      req.session.destroy();
+      return res.json({
+        authenticated: false,
+        sessionId: null,
+        error: 'Account deactivated'
+      });
+    }
+
+    // Return authenticated status with user info
+    res.json({
+      authenticated: true,
+      sessionId: req.session.id,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        department: user.department
+      }
+    });
+
+  } catch (error) {
+    console.error('Auth status check failed:', error);
+    res.json({
+      authenticated: false,
+      sessionId: null,
+      error: 'Database error'
+    });
+  }
 });
 
 // Change password endpoint

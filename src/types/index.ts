@@ -172,6 +172,16 @@ export interface CompanyDetails {
   address: string;
   phone: string;
   industry: string;
+  employee_count: number;
+  logo_url?: string;
+}
+
+export interface CompanyInfo {
+  name: string;
+  domain: string;
+  address: string;
+  phone: string;
+  industry: string;
   employeeCount: number;
-  logo?: string;
+  logoUrl?: string;
 }

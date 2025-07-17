@@ -26,9 +26,17 @@ api.interceptors.response.use(
     return response;
   },
   (error: AxiosError) => {
-    console.error(`[API] ❌ ${error.response?.status} ${error.config?.url}:`, error.response?.data);
+    const url = error.config?.url;
+    const status = error.response?.status;
     
-    if (error.response?.status === 401) {
+    // 401 on auth/me is expected when checking for existing sessions
+    if (status === 401 && url?.includes('/api/auth/me')) {
+      console.log(`[API] ℹ️ ${status} ${url}: No existing session`);
+    } else {
+      console.error(`[API] ❌ ${status} ${url}:`, error.response?.data);
+    }
+    
+    if (status === 401) {
       // Handle authentication errors
       console.log('[API] Authentication required - redirecting to login');
     }

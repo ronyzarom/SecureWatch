@@ -2,10 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../utils/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const EmailRiskAnalyzer = require('../services/emailRiskAnalyzer');
-
-// Initialize AI risk analyzer
-const riskAnalyzer = new EmailRiskAnalyzer();
+const riskAnalyzer = require('../services/emailRiskAnalyzer');
 
 /**
  * @swagger

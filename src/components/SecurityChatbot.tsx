@@ -10,11 +10,13 @@ import { chatAPI } from '../services/api';
 interface SecurityChatbotProps {
   currentEmployee?: Employee;
   onActionClick?: (action: string, context?: any) => void;
+  variant?: 'standalone' | 'modal';
 }
 
 export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({ 
   currentEmployee, 
-  onActionClick 
+  onActionClick,
+  variant = 'standalone'
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -56,7 +58,7 @@ export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({
       }
       
       return {
-        content: response.response || response.message || 'I received your message but couldn\'t generate a response.',
+        content: response.aiMessage?.content || response.response || response.message || 'I received your message but couldn\'t generate a response.',
         context: response.context
       };
       
@@ -271,21 +273,27 @@ export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col h-[600px]">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-600 dark:bg-blue-500 rounded-full flex items-center justify-center">
-            <Bot className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white">AI Security Analyst</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              {currentEmployee ? `Analyzing ${currentEmployee.name}` : 'Ready to assist with security investigations'}
-            </p>
+    <div className={`bg-white dark:bg-gray-800 flex flex-col ${
+      variant === 'modal' 
+        ? 'h-full' 
+        : 'rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 h-[600px]'
+    }`}>
+      {/* Header - only show in standalone mode */}
+      {variant === 'standalone' && (
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-blue-600 dark:bg-blue-500 rounded-full flex items-center justify-center">
+              <Bot className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">AI Security Analyst</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                {currentEmployee ? `Analyzing ${currentEmployee.name}` : 'Ready to assist with security investigations'}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">

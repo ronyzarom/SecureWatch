@@ -9,6 +9,7 @@ const sentiment = require('sentiment');
  * - Behavioral Pattern Analysis
  * - Anomaly Detection
  * - Risk Scoring Algorithms
+ * - Office 365 Specific Analysis
  */
 
 class EmailRiskAnalyzer {
@@ -23,38 +24,65 @@ class EmailRiskAnalyzer {
       financial: [
         'bank account', 'credit card', 'ssn', 'social security', 'routing number',
         'financial records', 'salary', 'bonus', 'quarterly results', 'revenue',
-        'profit', 'budget', 'confidential', 'proprietary', 'trade secret'
+        'profit', 'budget', 'confidential', 'proprietary', 'trade secret',
+        'invoice', 'payment', 'wire transfer', 'account number', 'tax return'
       ],
       
       // Data Exfiltration Indicators
       dataExfiltration: [
         'customer data', 'user database', 'employee records', 'source code',
         'backup', 'download', 'export', 'transfer', 'copy', 'share',
-        'personal account', 'dropbox', 'google drive', 'onedrive'
+        'personal account', 'dropbox', 'google drive', 'onedrive',
+        'zip file', 'encrypted file', 'usb drive', 'external drive',
+        'cloud storage', 'file sharing', 'data dump', 'extract data'
       ],
       
       // External Communication Risk
       external: [
         'competitor', 'job interview', 'resignation', 'opportunity',
-        'headhunter', 'recruiter', 'new position', 'leaving company'
+        'headhunter', 'recruiter', 'new position', 'leaving company',
+        'other company', 'external partner', 'vendor', 'supplier'
       ],
       
       // Policy Violations
       policy: [
         'personal use', 'side business', 'freelance', 'moonlighting',
-        'conflict of interest', 'insider trading', 'non-disclosure'
+        'conflict of interest', 'insider trading', 'non-disclosure',
+        'policy violation', 'against policy', 'not allowed', 'prohibited'
       ],
       
       // Urgent/Pressure Tactics
       urgency: [
         'urgent', 'asap', 'immediately', 'deadline', 'emergency',
-        'time sensitive', 'critical', 'rush', 'priority'
+        'time sensitive', 'critical', 'rush', 'priority',
+        'last chance', 'expires today', 'act now'
       ],
       
       // Security Bypass Attempts
       security: [
         'bypass', 'workaround', 'alternative', 'unauthorized access',
-        'permission', 'admin rights', 'password', 'credentials'
+        'permission', 'admin rights', 'password', 'credentials',
+        'security bypass', 'access denied', 'permission denied'
+      ],
+
+      // Suspicious Attachments
+      suspiciousAttachments: [
+        'exe', 'scr', 'bat', 'cmd', 'com', 'pif', 'vbs', 'js',
+        'jar', 'zip', 'rar', '7z', 'encrypted', 'password protected'
+      ],
+
+      // Intellectual Property
+      intellectualProperty: [
+        'patent', 'trademark', 'copyright', 'intellectual property',
+        'proprietary technology', 'trade secret', 'know-how',
+        'research data', 'prototype', 'blueprint', 'design'
+      ],
+
+      // Compliance Issues
+      compliance: [
+        'hipaa', 'gdpr', 'sox', 'pci', 'compliance violation',
+        'regulatory', 'audit', 'investigation', 'whistleblower',
+        'legal action', 'lawsuit', 'settlement'
       ]
     };
 
@@ -64,6 +92,13 @@ class EmailRiskAnalyzer {
       weekends: 1.3,      // 30% increase in risk
       holidays: 1.7,      // 70% increase in risk
       lateNight: 2.0      // 100% increase in risk (11PM - 5AM)
+    };
+
+    // Domain risk levels
+    this.domainRiskLevels = {
+      high: ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com'],
+      medium: ['protonmail.com', 'tutanota.com', 'guerrillamail.com'],
+      low: [] // Company domains will be dynamically added
     };
   }
 
@@ -81,6 +116,7 @@ class EmailRiskAnalyzer {
       riskFactors: [],
       patterns: [],
       recommendations: [],
+      violations: [],
       confidence: 0,
       analyzedAt: new Date().toISOString()
     };
@@ -91,11 +127,13 @@ class EmailRiskAnalyzer {
       analysis.riskScore += contentRisk.score;
       analysis.riskFactors.push(...contentRisk.factors);
       analysis.patterns.push(...contentRisk.patterns);
+      analysis.violations.push(...contentRisk.violations);
 
       // 2. Recipient Analysis
       const recipientRisk = this.analyzeRecipients(email);
       analysis.riskScore += recipientRisk.score;
       analysis.riskFactors.push(...recipientRisk.factors);
+      analysis.violations.push(...recipientRisk.violations);
 
       // 3. Timing Analysis
       const timingRisk = this.analyzeTiming(email);
@@ -106,6 +144,7 @@ class EmailRiskAnalyzer {
       const attachmentRisk = this.analyzeAttachments(email);
       analysis.riskScore += attachmentRisk.score;
       analysis.riskFactors.push(...attachmentRisk.factors);
+      analysis.violations.push(...attachmentRisk.violations);
 
       // 5. Behavioral Analysis (compared to employee's normal patterns)
       const behavioralRisk = this.analyzeBehavioralPattern(email, employeeProfile);
@@ -117,198 +156,390 @@ class EmailRiskAnalyzer {
       analysis.riskScore += sentimentRisk.score;
       analysis.riskFactors.push(...sentimentRisk.factors);
 
-      // 7. Calculate final risk level and confidence
+      // 7. Header Analysis (Office 365 specific)
+      const headerRisk = this.analyzeHeaders(email);
+      analysis.riskScore += headerRisk.score;
+      analysis.riskFactors.push(...headerRisk.factors);
+      analysis.violations.push(...headerRisk.violations);
+
+      // 8. Data Loss Prevention Analysis
+      const dlpRisk = this.analyzeDLP(email);
+      analysis.riskScore += dlpRisk.score;
+      analysis.riskFactors.push(...dlpRisk.factors);
+      analysis.violations.push(...dlpRisk.violations);
+
+      // 9. Calculate final risk level and confidence
       analysis.riskScore = Math.min(analysis.riskScore, 100); // Cap at 100
       analysis.riskLevel = this.calculateRiskLevel(analysis.riskScore);
       analysis.confidence = this.calculateConfidence(analysis);
+
+      // 10. Generate recommendations
       analysis.recommendations = this.generateRecommendations(analysis);
 
       return analysis;
 
     } catch (error) {
-      console.error('Email risk analysis error:', error);
-      return {
-        ...analysis,
-        error: error.message,
-        riskScore: 50, // Default medium risk on error
-        riskLevel: 'Medium'
-      };
+      console.error('Error in email analysis:', error);
+      analysis.riskFactors.push('Analysis error occurred');
+      analysis.confidence = 0;
+      return analysis;
     }
   }
 
   /**
-   * Analyze email content for risk patterns
+   * Analyze email headers for security indicators
+   */
+  analyzeHeaders(email) {
+    const result = {
+      score: 0,
+      factors: [],
+      violations: []
+    };
+
+    try {
+      // Check for SPF, DKIM, DMARC failures (would be in headers if available)
+      if (email.headers) {
+        if (email.headers['Authentication-Results']) {
+          const authResults = email.headers['Authentication-Results'].toLowerCase();
+          if (authResults.includes('spf=fail')) {
+            result.score += 15;
+            result.factors.push('SPF authentication failed');
+            result.violations.push('Email Authentication Failure');
+          }
+          if (authResults.includes('dkim=fail')) {
+            result.score += 15;
+            result.factors.push('DKIM authentication failed');
+            result.violations.push('Email Authentication Failure');
+          }
+          if (authResults.includes('dmarc=fail')) {
+            result.score += 20;
+            result.factors.push('DMARC authentication failed');
+            result.violations.push('Email Authentication Failure');
+          }
+        }
+
+        // Check for suspicious message routes
+        if (email.headers['Received']) {
+          const received = Array.isArray(email.headers['Received']) 
+            ? email.headers['Received'] 
+            : [email.headers['Received']];
+          
+          const suspiciousRoutes = received.some(route => 
+            route.includes('tor') || 
+            route.includes('proxy') || 
+            route.includes('suspicious')
+          );
+
+          if (suspiciousRoutes) {
+            result.score += 25;
+            result.factors.push('Email routed through suspicious networks');
+            result.violations.push('Suspicious Email Routing');
+          }
+        }
+      }
+
+      // Check sender reputation based on domain
+      if (email.sender && email.sender.email) {
+        const domain = email.sender.email.split('@')[1];
+        if (this.domainRiskLevels.high.includes(domain)) {
+          result.score += 10;
+          result.factors.push(`High-risk email domain: ${domain}`);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error analyzing headers:', error);
+    }
+
+    return result;
+  }
+
+  /**
+   * Data Loss Prevention Analysis
+   */
+  analyzeDLP(email) {
+    const result = {
+      score: 0,
+      factors: [],
+      violations: []
+    };
+
+    try {
+      const content = `${email.subject || ''} ${email.bodyText || ''}`.toLowerCase();
+
+      // Credit Card Pattern Detection
+      const creditCardPattern = /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g;
+      if (creditCardPattern.test(content)) {
+        result.score += 30;
+        result.factors.push('Credit card number detected');
+        result.violations.push('Credit Card Information Disclosure');
+      }
+
+      // SSN Pattern Detection
+      const ssnPattern = /\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g;
+      if (ssnPattern.test(content)) {
+        result.score += 35;
+        result.factors.push('Social Security Number detected');
+        result.violations.push('PII Disclosure');
+      }
+
+      // Bank Account Pattern
+      const bankAccountPattern = /\b(?:account|acct)[\s#]*\d{8,17}\b/gi;
+      if (bankAccountPattern.test(content)) {
+        result.score += 25;
+        result.factors.push('Bank account number detected');
+        result.violations.push('Financial Information Disclosure');
+      }
+
+      // Email Pattern (potential data leakage)
+      const emailPattern = /@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+      const emailMatches = content.match(emailPattern);
+      if (emailMatches && emailMatches.length > 10) {
+        result.score += 20;
+        result.factors.push(`Large number of email addresses detected (${emailMatches.length})`);
+        result.violations.push('Potential Email List Disclosure');
+      }
+
+      // IP Address Pattern
+      const ipPattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+      const ipMatches = content.match(ipPattern);
+      if (ipMatches && ipMatches.length > 3) {
+        result.score += 15;
+        result.factors.push('Multiple IP addresses detected');
+        result.violations.push('Network Information Disclosure');
+      }
+
+      // Database Connection String Pattern
+      const dbPattern = /(server|host|database|uid|pwd|password)\s*=\s*[^;\s]+/gi;
+      if (dbPattern.test(content)) {
+        result.score += 40;
+        result.factors.push('Database connection information detected');
+        result.violations.push('Database Credential Disclosure');
+      }
+
+      // API Key Pattern
+      const apiKeyPattern = /(api[_-]?key|token|secret)["\s]*[:=]["\s]*[a-zA-Z0-9]{20,}/gi;
+      if (apiKeyPattern.test(content)) {
+        result.score += 35;
+        result.factors.push('API key or token detected');
+        result.violations.push('API Credential Disclosure');
+      }
+
+    } catch (error) {
+      console.error('Error in DLP analysis:', error);
+    }
+
+    return result;
+  }
+
+  /**
+   * Enhanced content analysis with better pattern matching
    */
   analyzeContent(email) {
-    const result = { score: 0, factors: [], patterns: [] };
-    const content = `${email.subject} ${email.bodyText}`.toLowerCase();
-    const tokens = this.tokenizer.tokenize(content);
+    const result = {
+      score: 0,
+      factors: [],
+      patterns: [],
+      violations: []
+    };
 
-    // Check for risk patterns
-    Object.entries(this.riskPatterns).forEach(([category, keywords]) => {
-      const matches = keywords.filter(keyword => 
-        content.includes(keyword.toLowerCase())
-      );
-      
-      if (matches.length > 0) {
-        const categoryScore = matches.length * this.getCategoryWeight(category);
-        result.score += categoryScore;
-        result.factors.push({
-          type: 'content',
-          category,
-          matches,
-          score: categoryScore,
-          description: `Detected ${category} related keywords: ${matches.join(', ')}`
-        });
-        result.patterns.push(category);
+    try {
+      const content = `${email.subject || ''} ${email.bodyText || ''}`.toLowerCase();
+      const tokens = this.tokenizer.tokenize(content) || [];
+
+      // Analyze against each risk pattern category
+      Object.entries(this.riskPatterns).forEach(([category, patterns]) => {
+        const matches = patterns.filter(pattern => 
+          content.includes(pattern.toLowerCase())
+        );
+
+        if (matches.length > 0) {
+          const categoryScore = this.calculateCategoryScore(category, matches.length);
+          result.score += categoryScore;
+          result.patterns.push({
+            category,
+            matches,
+            severity: this.getCategorySeverity(category)
+          });
+
+          matches.forEach(match => {
+            result.factors.push(`${category}: "${match}"`);
+            
+            // Add specific violations
+            if (category === 'financial' || category === 'intellectualProperty') {
+              result.violations.push('Confidential Information Disclosure');
+            } else if (category === 'dataExfiltration') {
+              result.violations.push('Data Exfiltration Attempt');
+            } else if (category === 'compliance') {
+              result.violations.push('Compliance Violation');
+            } else if (category === 'security') {
+              result.violations.push('Security Policy Violation');
+            }
+          });
+        }
+      });
+
+      // Analyze text sentiment and urgency
+      const sentimentScore = this.sentiment.analyze(content);
+      if (sentimentScore.score < -3) {
+        result.score += 10;
+        result.factors.push('Negative sentiment detected');
       }
-    });
 
-    // Check for suspicious patterns
-    const suspiciousPatterns = this.detectSuspiciousPatterns(content, tokens);
-    result.score += suspiciousPatterns.score;
-    result.factors.push(...suspiciousPatterns.factors);
+    } catch (error) {
+      console.error('Error analyzing content:', error);
+    }
 
     return result;
   }
 
   /**
-   * Analyze email recipients for external/suspicious contacts
+   * Enhanced recipient analysis
    */
   analyzeRecipients(email) {
-    const result = { score: 0, factors: [] };
-    const externalRecipients = [];
-    const suspiciousRecipients = [];
+    const result = {
+      score: 0,
+      factors: [],
+      violations: []
+    };
 
-    email.recipients.forEach(recipient => {
-      // Check if recipient is external
-      if (!this.isInternalEmail(recipient.email)) {
-        externalRecipients.push(recipient.email);
-        result.score += 15; // Base score for external communication
+    try {
+      const recipients = email.recipients || [];
+      
+      if (recipients.length === 0) return result;
+
+      // Analyze external recipients
+      const externalRecipients = recipients.filter(r => 
+        !r.email.includes('@company.com') // Should be dynamic based on company domain
+      );
+
+      if (externalRecipients.length > 0) {
+        result.score += externalRecipients.length * 5;
+        result.factors.push(`${externalRecipients.length} external recipients`);
+
+        // Check for high-risk domains
+        const highRiskDomains = externalRecipients.filter(r => 
+          this.domainRiskLevels.high.some(domain => r.email.includes(domain))
+        );
+
+        if (highRiskDomains.length > 0) {
+          result.score += highRiskDomains.length * 10;
+          result.factors.push(`Recipients from high-risk domains: ${highRiskDomains.length}`);
+          result.violations.push('Communication with High-Risk Domains');
+        }
       }
 
-      // Check for suspicious domains
-      if (this.isSuspiciousDomain(recipient.email)) {
-        suspiciousRecipients.push(recipient.email);
-        result.score += 25;
+      // Mass email detection
+      if (recipients.length > 50) {
+        result.score += 20;
+        result.factors.push(`Mass email with ${recipients.length} recipients`);
+        result.violations.push('Mass Email Distribution');
       }
-    });
 
-    if (externalRecipients.length > 0) {
-      result.factors.push({
-        type: 'recipients',
-        category: 'external',
-        score: externalRecipients.length * 15,
-        description: `External recipients detected: ${externalRecipients.join(', ')}`,
-        recipients: externalRecipients
-      });
-    }
+      // BCC usage analysis
+      const bccRecipients = recipients.filter(r => r.type === 'bcc');
+      if (bccRecipients.length > 5) {
+        result.score += 15;
+        result.factors.push(`High number of BCC recipients: ${bccRecipients.length}`);
+        result.violations.push('Suspicious BCC Usage');
+      }
 
-    if (suspiciousRecipients.length > 0) {
-      result.factors.push({
-        type: 'recipients',
-        category: 'suspicious',
-        score: suspiciousRecipients.length * 25,
-        description: `Suspicious domains detected: ${suspiciousRecipients.join(', ')}`,
-        recipients: suspiciousRecipients
-      });
+    } catch (error) {
+      console.error('Error analyzing recipients:', error);
     }
 
     return result;
   }
 
   /**
-   * Analyze email timing for unusual patterns
-   */
-  analyzeTiming(email) {
-    const result = { multiplier: 1.0, factors: [] };
-    const sentTime = new Date(email.sentAt);
-    const hour = sentTime.getHours();
-    const day = sentTime.getDay();
-
-    // After hours (6PM - 8AM)
-    if (hour >= 18 || hour <= 8) {
-      result.multiplier *= this.timeRiskFactors.afterHours;
-      result.factors.push({
-        type: 'timing',
-        category: 'after_hours',
-        description: `Email sent after hours at ${sentTime.toLocaleTimeString()}`,
-        riskMultiplier: this.timeRiskFactors.afterHours
-      });
-    }
-
-    // Late night (11PM - 5AM)
-    if (hour >= 23 || hour <= 5) {
-      result.multiplier *= this.timeRiskFactors.lateNight;
-      result.factors.push({
-        type: 'timing',
-        category: 'late_night',
-        description: `Email sent during late night hours`,
-        riskMultiplier: this.timeRiskFactors.lateNight
-      });
-    }
-
-    // Weekends
-    if (day === 0 || day === 6) {
-      result.multiplier *= this.timeRiskFactors.weekends;
-      result.factors.push({
-        type: 'timing',
-        category: 'weekend',
-        description: `Email sent on weekend`,
-        riskMultiplier: this.timeRiskFactors.weekends
-      });
-    }
-
-    return result;
-  }
-
-  /**
-   * Analyze email attachments for risks
+   * Enhanced attachment analysis
    */
   analyzeAttachments(email) {
-    const result = { score: 0, factors: [] };
-    
-    if (!email.attachments || email.attachments.length === 0) {
-      return result;
+    const result = {
+      score: 0,
+      factors: [],
+      violations: []
+    };
+
+    try {
+      const attachments = email.attachments || [];
+      
+      if (attachments.length === 0) return result;
+
+      attachments.forEach(attachment => {
+        const filename = attachment.filename.toLowerCase();
+        const fileExtension = filename.split('.').pop();
+
+        // Check for suspicious file types
+        if (this.riskPatterns.suspiciousAttachments.includes(fileExtension)) {
+          result.score += 25;
+          result.factors.push(`Suspicious attachment: ${attachment.filename}`);
+          result.violations.push('Suspicious Attachment');
+        }
+
+        // Check for large files
+        if (attachment.size > 10 * 1024 * 1024) { // 10MB
+          result.score += 15;
+          result.factors.push(`Large attachment: ${attachment.filename} (${Math.round(attachment.size / 1024 / 1024)}MB)`);
+        }
+
+        // Check for password-protected or encrypted files
+        if (filename.includes('password') || filename.includes('encrypted')) {
+          result.score += 20;
+          result.factors.push(`Encrypted/password-protected file: ${attachment.filename}`);
+          result.violations.push('Encrypted File Transfer');
+        }
+
+        // Multiple attachments risk
+        if (attachments.length > 5) {
+          result.score += 10;
+          result.factors.push(`Multiple attachments: ${attachments.length} files`);
+        }
+      });
+
+    } catch (error) {
+      console.error('Error analyzing attachments:', error);
     }
 
-    const riskyExtensions = [
-      '.exe', '.bat', '.cmd', '.scr', '.pif', '.com', '.jar',
-      '.zip', '.rar', '.7z', '.tar', '.gz'
-    ];
-
-    const largeFileThreshold = 10 * 1024 * 1024; // 10MB
-
-    email.attachments.forEach(attachment => {
-      // Check for risky file types
-      const extension = attachment.filename.toLowerCase().substr(attachment.filename.lastIndexOf('.'));
-      if (riskyExtensions.includes(extension)) {
-        result.score += 20;
-        result.factors.push({
-          type: 'attachment',
-          category: 'risky_filetype',
-          score: 20,
-          description: `Risky file type detected: ${attachment.filename}`,
-          filename: attachment.filename,
-          extension
-        });
-      }
-
-      // Check for large files
-      if (attachment.size > largeFileThreshold) {
-        result.score += 15;
-        result.factors.push({
-          type: 'attachment',
-          category: 'large_file',
-          score: 15,
-          description: `Large file attachment: ${attachment.filename} (${(attachment.size / 1024 / 1024).toFixed(1)}MB)`,
-          filename: attachment.filename,
-          size: attachment.size
-        });
-      }
-    });
-
     return result;
+  }
+
+  /**
+   * Calculate category-specific scores
+   */
+  calculateCategoryScore(category, matchCount) {
+    const baseScores = {
+      financial: 20,
+      dataExfiltration: 25,
+      intellectualProperty: 22,
+      compliance: 30,
+      security: 18,
+      external: 10,
+      policy: 15,
+      urgency: 8,
+      suspiciousAttachments: 25
+    };
+
+    return (baseScores[category] || 10) * Math.min(matchCount, 3);
+  }
+
+  /**
+   * Get category severity level
+   */
+  getCategorySeverity(category) {
+    const severityMap = {
+      financial: 'High',
+      dataExfiltration: 'Critical',
+      intellectualProperty: 'High',
+      compliance: 'Critical',
+      security: 'High',
+      external: 'Medium',
+      policy: 'Medium',
+      urgency: 'Low',
+      suspiciousAttachments: 'High'
+    };
+
+    return severityMap[category] || 'Medium';
   }
 
   /**
@@ -467,64 +698,43 @@ class EmailRiskAnalyzer {
     return suspiciousDomains.includes(domain);
   }
 
-  calculateRiskLevel(score) {
-    if (score >= 80) return 'Critical';
-    if (score >= 60) return 'High';
-    if (score >= 40) return 'Medium';
+  calculateRiskLevel(riskScore) {
+    if (riskScore >= 80) return 'Critical';
+    if (riskScore >= 60) return 'High';
+    if (riskScore >= 40) return 'Medium';
     return 'Low';
   }
 
   calculateConfidence(analysis) {
-    // Confidence based on number of factors and their consistency
-    const factorCount = analysis.riskFactors.length;
-    const uniqueCategories = new Set(analysis.riskFactors.map(f => f.category)).size;
+    let confidence = 50; // Base confidence
     
-    let confidence = Math.min(factorCount * 15, 100);
+    if (analysis.patterns.length > 0) confidence += 20;
+    if (analysis.violations.length > 0) confidence += 25;
+    if (analysis.riskFactors.length > 3) confidence += 15;
     
-    // Boost confidence if multiple categories are involved
-    if (uniqueCategories > 3) confidence += 20;
-    
-    return Math.min(confidence, 100);
+    return Math.min(confidence, 95);
   }
 
   generateRecommendations(analysis) {
     const recommendations = [];
-    const categories = new Set(analysis.riskFactors.map(f => f.category));
 
-    if (categories.has('external')) {
-      recommendations.push({
-        type: 'investigate',
-        priority: 'high',
-        action: 'Review external recipients and verify business purpose',
-        description: 'External communication detected requiring verification'
-      });
+    if (analysis.riskScore >= 80) {
+      recommendations.push('Immediate investigation required');
+      recommendations.push('Consider blocking sender/recipients');
     }
 
-    if (categories.has('financial') || categories.has('dataExfiltration')) {
-      recommendations.push({
-        type: 'escalate',
-        priority: 'critical',
-        action: 'Immediate security team notification required',
-        description: 'Sensitive data exposure risk detected'
-      });
+    if (analysis.violations.includes('Data Exfiltration Attempt')) {
+      recommendations.push('Review data access permissions');
+      recommendations.push('Monitor employee data download activity');
     }
 
-    if (categories.has('after_hours') || categories.has('late_night')) {
-      recommendations.push({
-        type: 'monitor',
-        priority: 'medium',
-        action: 'Monitor employee for unusual work patterns',
-        description: 'After-hours activity may indicate stress or malicious intent'
-      });
+    if (analysis.violations.includes('Confidential Information Disclosure')) {
+      recommendations.push('Implement additional DLP controls');
+      recommendations.push('Provide data handling training');
     }
 
-    if (analysis.riskScore > 70) {
-      recommendations.push({
-        type: 'block',
-        priority: 'high',
-        action: 'Consider blocking similar communications pending investigation',
-        description: 'High risk score warrants immediate attention'
-      });
+    if (analysis.riskFactors.some(f => f.includes('external'))) {
+      recommendations.push('Review external communication policies');
     }
 
     return recommendations;
@@ -636,4 +846,4 @@ class EmailRiskAnalyzer {
   }
 }
 
-module.exports = EmailRiskAnalyzer; 
+module.exports = new EmailRiskAnalyzer(); 

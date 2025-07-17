@@ -9,7 +9,8 @@ import {
   ChevronRight,
   Mail,
   Building,
-  UserCheck
+  UserCheck,
+  FileText
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -54,6 +55,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Users',
       icon: Users,
       page: 'users'
+    },
+    {
+      id: 'policies',
+      label: 'Policies',
+      icon: FileText,
+      page: 'policies'
     },
     {
       id: 'settings',

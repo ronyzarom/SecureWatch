@@ -16,6 +16,12 @@ const userRoutes = require('./src/routes/users');
 const chatRoutes = require('./src/routes/chat');
 const settingsRoutes = require('./src/routes/settings');
 const emailRoutes = require('./src/routes/emails');
+const policiesRoutes = require('./src/routes/policies');
+const integrationsRoutes = require('./src/routes/integrations');
+const adminRoutes = require('./src/routes/admin');
+
+// Import services
+const policyActionExecutor = require('./src/services/policyActionExecutor');
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -37,9 +43,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Set to false for development (HTTP)
     httpOnly: true,
-    maxAge: 8 * 60 * 60 * 1000 // 8 hours
+    maxAge: 8 * 60 * 60 * 1000, // 8 hours
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' // Allow cross-origin in dev
   },
   name: 'securewatch.session'
 }));
@@ -104,6 +111,9 @@ app.use('/api/users', userRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/emails', emailRoutes);
+app.use('/api/policies', policiesRoutes);
+app.use('/api/integrations', integrationsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -134,4 +144,20 @@ app.listen(PORT, () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
+  
+  // Start policy action executor
+  policyActionExecutor.start();
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n🛑 Shutting down server...');
+  policyActionExecutor.stop();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 Shutting down server...');
+  policyActionExecutor.stop();
+  process.exit(0);
 }); 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, AlertTriangle, Shield, TrendingUp, Bot } from 'lucide-react';
+import { Users, AlertTriangle, Shield, TrendingUp } from 'lucide-react';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -8,13 +8,14 @@ import { EmployeeCard } from './components/EmployeeCard';
 import { EmployeeDetailsModal } from './components/EmployeeDetailsModal';
 import { NetworkAnalysis } from './components/NetworkAnalysis';
 import { RecentActivity } from './components/RecentActivity';
-import { SecurityChatbot } from './components/SecurityChatbot';
+
 import { EmailAnalytics } from './components/EmailAnalytics';
 import { IntegrationsPage } from './pages/IntegrationsPage';
 import { UsersPage } from './pages/UsersPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { SettingsEmailPage } from './pages/SettingsEmailPage';
 import { SettingsCompanyPage } from './pages/SettingsCompanyPage';
+import { PoliciesPage } from './pages/PoliciesPage';
 // Mock data imports removed - now using real API data
 import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';
@@ -27,7 +28,7 @@ import api from './services/api';
 function App() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [viewMode, setViewMode] = useState<'all' | 'high-risk'>('high-risk');
-  const [showChatbot, setShowChatbot] = useState(false);
+
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -65,8 +66,13 @@ function App() {
           setUser(response.data.user);
           setIsAuthenticated(true);
           console.log('✅ User already authenticated:', response.data.user);
-        } catch (error) {
-          console.log('ℹ️ User not authenticated, showing login page');
+        } catch (error: any) {
+          // 401 is expected when no session exists - not an error
+          if (error.response?.status === 401) {
+            console.log('ℹ️ No existing session found, showing login page');
+          } else {
+            console.error('⚠️ Auth check failed:', error.message);
+          }
           setIsAuthenticated(false);
         }
       } else {
@@ -213,14 +219,7 @@ function App() {
     setEmployeeCurrentPage(1);
   }, [viewMode, employeesPerPage]);
 
-  const handleChatAction = (actionType: string, context?: any) => {
-    console.log('Global chat action:', actionType, context);
-    // Handle different action types globally
-    if (actionType === 'investigate' && context?.employee) {
-      setSelectedEmployee(context.employee);
-      setShowChatbot(false);
-    }
-  };
+
 
   const renderPage = () => {
     switch (currentPage) {
@@ -230,6 +229,8 @@ function App() {
         return <EmployeesPage />;
       case 'users':
         return <UsersPage />;
+      case 'policies':
+        return <PoliciesPage />;
       case 'settings-email':
         return <SettingsEmailPage />;
       case 'settings-company':
@@ -421,84 +422,7 @@ function App() {
               </div>
             </div>
 
-            {/* AI Assistant Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center space-x-3">
-                      <Bot className="w-6 h-6 text-blue-600" />
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">AI Security Assistant</h2>
-                    </div>
-                    <button
-                      onClick={() => setShowChatbot(!showChatbot)}
-                      className={`px-4 py-2 rounded-lg transition-colors ${
-                        showChatbot 
-                          ? 'bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600' 
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {showChatbot ? 'Hide Assistant' : 'Show Assistant'}
-                    </button>
-                  </div>
-                  
-                  {showChatbot ? (
-                    <SecurityChatbot onActionClick={handleChatAction} />
-                  ) : (
-                    <div className="text-center py-12">
-                      <Bot className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">AI Security Investigation Assistant</h3>
-                      <p className="text-gray-600 dark:text-gray-300 mb-6 max-w-md mx-auto">
-                        Get intelligent insights about security threats, investigate employee behavior, 
-                        and receive actionable recommendations for incident response.
-                      </p>
-                      <button
-                        onClick={() => setShowChatbot(true)}
-                        className="px-6 py-3 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
-                      >
-                        Start AI Investigation
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div className="space-y-6">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">AI Capabilities</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">Risk Analysis</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">Analyze employee behavior patterns and risk factors</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-3">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">Investigation Guidance</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">Step-by-step investigation procedures and checklists</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-3">
-                      <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">Threat Detection</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">Identify policy violations and security incidents</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-3">
-                      <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">Network Analysis</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">Understand employee connections and communication patterns</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+
           </>
         );
     }

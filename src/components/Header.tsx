@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Bell, User, Menu, LogOut, Settings } from 'lucide-react';
+import { Bell, User, Menu, LogOut, Settings, MessageCircle, X } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { SecurityChatbot } from './SecurityChatbot';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -10,6 +11,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, user, onLogout }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
 
   const handleLogout = () => {
     if (onLogout) {
@@ -43,6 +45,16 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, user, onLogout 
                 3
               </span>
             </button>
+            
+            {/* AI Chat Icon */}
+            <button 
+              onClick={() => setShowAIChat(true)}
+              className="relative p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:text-gray-400 dark:hover:text-blue-400 dark:hover:bg-blue-900/20 rounded-full transition-colors"
+              title="AI Security Assistant"
+            >
+              <MessageCircle className="w-5 h-5" />
+            </button>
+            
             <ThemeToggle />
             
             {/* User menu */}
@@ -99,6 +111,41 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, user, onLogout 
           className="fixed inset-0 z-40" 
           onClick={() => setShowUserMenu(false)}
         />
+      )}
+
+      {/* AI Chat Modal */}
+      {showAIChat && (
+        <>
+          {/* Modal Overlay */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-50"
+            onClick={() => setShowAIChat(false)}
+          />
+          
+          {/* Chat Modal */}
+          <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-2xl z-50 flex flex-col">
+            {/* Chat Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center space-x-2">
+                <MessageCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  AI Security Assistant
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAIChat(false)}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Chat Content */}
+            <div className="flex-1 overflow-hidden">
+              <SecurityChatbot variant="modal" />
+            </div>
+          </div>
+        </>
       )}
     </header>
   );

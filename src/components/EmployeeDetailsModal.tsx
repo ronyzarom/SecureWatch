@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X, Mail, Users, Clock, Shield, TrendingUp, AlertTriangle, Calendar, Database, Activity, Eye, FileText, Zap } from 'lucide-react';
 import { Employee } from '../types';
 import { getRiskColor, getRiskTextColor, formatTimeAgo } from '../utils/riskUtils';
-import { SecurityChatbot } from './SecurityChatbot';
 import { LoadingSpinner, InlineLoading } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
 import { AppError, ErrorType, createError, withErrorHandling, logError } from '../utils/errorUtils';
@@ -65,11 +64,7 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
     }
   };
 
-  const handleChatAction = (actionType: string, context?: any) => {
-    console.log('Chat action:', actionType, context);
-    // Handle different action types (investigate, monitor, escalate, report)
-    // This could trigger other parts of the application
-  };
+
 
   const retryLastAction = () => {
     setActionError(null);
@@ -151,9 +146,8 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
           </div>
         </div>
         
-        <div className="flex flex-1 overflow-hidden">
-          {/* Enhanced Main Content */}
-          <div className="flex-1 p-8 space-y-8 overflow-y-auto flex flex-col">
+        {/* Enhanced Main Content */}
+        <div className="flex-1 p-8 space-y-8 overflow-y-auto flex flex-col">
             {/* Risk Metrics Grid */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center space-x-2">
@@ -439,15 +433,6 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                 <span>{actionLoading === 'escalate' ? 'Escalating...' : 'Escalate Threat'}</span>
               </button>
             </div>
-          </div>
-          
-          {/* Enhanced AI Chatbot Sidebar */}
-          <div className="w-96 border-l border-gray-200 dark:border-gray-700 bg-gradient-to-b from-gray-50 to-white dark:from-gray-800 dark:to-gray-800">
-            <SecurityChatbot 
-              currentEmployee={employee}
-              onActionClick={handleChatAction}
-            />
-          </div>
         </div>
       </div>
     </div>

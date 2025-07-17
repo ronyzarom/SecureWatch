@@ -370,7 +370,7 @@ export const UsersPage: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
                       <button 
-                        onClick={() => setSelectedUser(user)}
+                        onClick={() => handleEditUser(user)}
                         className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 p-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
                       >
                         <Edit className="w-4 h-4" />

@@ -11,18 +11,24 @@ interface SecurityChatbotProps {
   currentEmployee?: Employee;
   onActionClick?: (action: string, context?: any) => void;
   variant?: 'standalone' | 'modal';
+  isAuthenticated?: boolean;
 }
 
 export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({ 
   currentEmployee, 
   onActionClick,
-  variant = 'standalone'
+  variant = 'standalone',
+  isAuthenticated = false
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       type: 'assistant',
-      content: `👋 Hello! I'm your AI security analyst assistant. I'm here to help you investigate threats, analyze employee behavior, and provide actionable security insights.\n\n${currentEmployee ? `I see you're looking at **${currentEmployee.name}** (Risk Score: ${currentEmployee.riskScore}). What would you like to know about their security profile?` : 'How can I assist you with your security investigation today?'}`,
+      content: `👋 Hello! I'm your AI security analyst assistant. I'm here to help you investigate threats, analyze employee behavior, and provide actionable security insights.\n\n${
+        !isAuthenticated 
+          ? '⚠️ **Note**: You are not currently logged in. I can provide general security guidance using mock data, but for real-time analysis and access to your actual security data, please log in first.\n\n' 
+          : ''
+      }${currentEmployee ? `I see you're looking at **${currentEmployee.name}** (Risk Score: ${currentEmployee.riskScore}). What would you like to know about their security profile?` : 'How can I assist you with your security investigation today?'}`,
       timestamp: new Date().toISOString()
     }
   ]);
@@ -47,6 +53,12 @@ export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({
     try {
       console.log('🤖 Sending message to AI:', query);
       
+      // Check if user is authenticated before making API call
+      if (!isAuthenticated) {
+        console.log('⚠️ User not authenticated, using mock response');
+        throw new Error('Authentication required');
+      }
+      
       // Send message with employee context if available
       const response = await chatAPI.sendMessage(query, currentEmployee?.id);
       
@@ -70,7 +82,7 @@ export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({
       
       console.error('❌ AI request failed:', error);
       
-      // Fallback to mock response if API fails
+      // Fallback to mock response if API fails or user not authenticated
       console.log('🔄 Falling back to mock response...');
       const fallbackResponse = generateAIResponse(query, {
         employee: currentEmployee,
@@ -355,7 +367,7 @@ export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-3">
-                <InlineLoading text="Thinking..." />
+                <InlineLoading text="Analyzing security data with AI... please wait" />
               </div>
             </div>
           </div>
@@ -404,7 +416,7 @@ export const SecurityChatbot: React.FC<SecurityChatbotProps> = ({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-            placeholder={isTyping ? "AI is thinking..." : currentEmployee ? `Ask about ${currentEmployee.name}...` : "Ask about security threats, investigations, or employee risks..."}
+            placeholder={isTyping ? "AI is analyzing... please wait" : !isAuthenticated ? "Try asking about security best practices (mock data only)..." : currentEmployee ? `Ask about ${currentEmployee.name}...` : "Ask about security threats, investigations, or employee risks..."}
             className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
             disabled={isTyping}
           />

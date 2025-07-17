@@ -142,7 +142,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, user, onLogout 
             
             {/* Chat Content */}
             <div className="flex-1 overflow-hidden">
-              <SecurityChatbot variant="modal" />
+              <SecurityChatbot variant="modal" isAuthenticated={!!user} />
             </div>
           </div>
         </>

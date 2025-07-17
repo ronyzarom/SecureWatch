@@ -193,10 +193,13 @@ export const employeeAPI = {
 // ============================================================
 
 export const chatAPI = {
-  sendMessage: async (message: string, employeeContext?: number) => {
+  sendMessage: async (message: string, employeeId?: number) => {
+    // No frontend timeout - let backend handle LLM processing time
     const response = await api.post('/api/chat/message', { 
       message, 
-      employeeContext 
+      employeeId 
+    }, {
+      timeout: 0 // No timeout - backend controls this
     });
     return response.data;
   },

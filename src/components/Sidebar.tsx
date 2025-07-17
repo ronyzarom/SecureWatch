@@ -10,7 +10,8 @@ import {
   Mail,
   Building,
   UserCheck,
-  FileText
+  FileText,
+  Database
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -61,6 +62,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Policies',
       icon: FileText,
       page: 'policies'
+    },
+    {
+      id: 'categories',
+      label: 'Categories',
+      icon: Database,
+      page: 'categories'
     },
     {
       id: 'settings',

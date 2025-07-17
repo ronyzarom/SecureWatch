@@ -16,6 +16,7 @@ import { EmployeesPage } from './pages/EmployeesPage';
 import { SettingsEmailPage } from './pages/SettingsEmailPage';
 import { SettingsCompanyPage } from './pages/SettingsCompanyPage';
 import { PoliciesPage } from './pages/PoliciesPage';
+import { CategoriesPage } from './pages/CategoriesPage';
 // Mock data imports removed - now using real API data
 import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';
@@ -231,6 +232,8 @@ function App() {
         return <UsersPage />;
       case 'policies':
         return <PoliciesPage />;
+      case 'categories':
+        return <CategoriesPage />;
       case 'settings-email':
         return <SettingsEmailPage />;
       case 'settings-company':

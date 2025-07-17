@@ -13,9 +13,13 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Clock
+  Clock,
+  Database,
+  Shield,
+  Settings
 } from 'lucide-react';
 import { ConfirmationModal } from '../components/ConfirmationModal';
+import { ThreatCategory } from '../types/categories';
 
 interface Policy {
   id: number;
@@ -29,10 +33,15 @@ interface Policy {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  
+  // Category integration
+  categories?: number[];
+  
   stats: {
     conditions: number;
     actions: number;
     recentExecutions: number;
+    categoriesUsed?: number;
   };
 }
 
@@ -78,6 +87,22 @@ export const PoliciesPage: React.FC = () => {
     delay?: number;
   }>>([]);
 
+  // NEW: Categories integration
+  const [availableCategories, setAvailableCategories] = useState<Array<{
+    id: number;
+    name: string;
+    severity: string;
+    baseRiskScore: number;
+    isActive: boolean;
+  }>>([]);
+  const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
+  const [categoryRules, setCategoryRules] = useState<Array<{
+    categoryId: number;
+    threshold: number;
+    enabled: boolean;
+    actions: string[];
+  }>>([]);
+
   // Edit form states
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -105,6 +130,7 @@ export const PoliciesPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [departments, setDepartments] = useState<Array<{id: number, name: string}>>([]);
   const [users, setUsers] = useState<Array<{id: number, name: string, email: string}>>([]);
+  const [categories, setCategories] = useState<ThreatCategory[]>([]);
 
   // Confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -217,6 +243,19 @@ export const PoliciesPage: React.FC = () => {
       }
     } catch (err) {
       console.error('Error fetching users:', err);
+    }
+  };
+
+  // Fetch categories
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/categories', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data.categories || []);
+      }
+    } catch (err) {
+      console.error('Error fetching categories:', err);
     }
   };
 
@@ -428,6 +467,7 @@ export const PoliciesPage: React.FC = () => {
     setShowCreateModal(true);
     fetchDepartments();
     fetchUsers();
+    fetchCategories();
   };
 
   // Handle edit policy

@@ -319,5 +319,46 @@ export const settingsAPI = {
   }
 };
 
+// ============================================================
+// CATEGORIES
+// ============================================================
+
+export const categoryAPI = {
+  getAll: async (includeKeywords: boolean = false) => {
+    const response = await api.get(`/api/categories?includeKeywords=${includeKeywords}`);
+    return response.data;
+  },
+
+  getById: async (id: number) => {
+    const response = await api.get(`/api/categories/${id}`);
+    return response.data;
+  },
+
+  create: async (categoryData: any) => {
+    const response = await api.post('/api/categories', categoryData);
+    return response.data;
+  },
+
+  update: async (id: number, categoryData: any) => {
+    const response = await api.put(`/api/categories/${id}`, categoryData);
+    return response.data;
+  },
+
+  delete: async (id: number) => {
+    const response = await api.delete(`/api/categories/${id}`);
+    return response.data;
+  },
+
+  getStats: async () => {
+    const response = await api.get('/api/categories/stats/overview');
+    return response.data;
+  },
+
+  getTemplates: async () => {
+    const response = await api.get('/api/categories/templates');
+    return response.data;
+  }
+};
+
 // Export the configured axios instance
 export default api; 

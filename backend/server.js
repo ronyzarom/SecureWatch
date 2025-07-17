@@ -19,6 +19,7 @@ const emailRoutes = require('./src/routes/emails');
 const policiesRoutes = require('./src/routes/policies');
 const integrationsRoutes = require('./src/routes/integrations');
 const adminRoutes = require('./src/routes/admin');
+const categoriesRoutes = require('./src/routes/categories');
 
 // Import services
 const policyActionExecutor = require('./src/services/policyActionExecutor');
@@ -114,6 +115,7 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/policies', policiesRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/categories', categoriesRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

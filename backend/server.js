@@ -22,6 +22,7 @@ const chatRoutes = require('./src/routes/chat');
 const settingsRoutes = require('./src/routes/settings');
 const integrationsRoutes = require('./src/routes/integrations');
 const categoriesRoutes = require('./src/routes/categories');
+const mfaRoutes = require('./src/routes/mfa');
 
 // Import services
 const policyActionExecutor = require('./src/services/policyActionExecutor');
@@ -120,6 +121,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/categories', categoriesRoutes);
+app.use('/api/mfa', mfaRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

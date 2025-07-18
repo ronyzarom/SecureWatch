@@ -7,15 +7,23 @@ interface HeaderProps {
   onToggleSidebar?: () => void;
   user?: any;
   onLogout?: () => void;
+  onPageChange?: (page: string) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, user, onLogout }) => {
+export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, user, onLogout, onPageChange }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
 
   const handleLogout = () => {
     if (onLogout) {
       onLogout();
+    }
+    setShowUserMenu(false);
+  };
+
+  const handleSettingsClick = () => {
+    if (onPageChange) {
+      onPageChange('user-settings');
     }
     setShowUserMenu(false);
   };
@@ -86,7 +94,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, user, onLogout 
                     </p>
                   </div>
                   <div className="p-1">
-                    <button className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
+                    <button 
+                      onClick={handleSettingsClick}
+                      className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    >
                       <Settings className="w-4 h-4" />
                       <span>Settings</span>
                     </button>

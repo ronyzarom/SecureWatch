@@ -15,6 +15,7 @@ import { UsersPage } from './pages/UsersPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { SettingsEmailPage } from './pages/SettingsEmailPage';
 import { SettingsCompanyPage } from './pages/SettingsCompanyPage';
+import { UserSettingsPage } from './pages/UserSettingsPage';
 import { PoliciesPage } from './pages/PoliciesPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { ViolationsPage } from './pages/ViolationsPage';
@@ -244,6 +245,8 @@ function App() {
         return <SettingsEmailPage />;
       case 'settings-company':
         return <SettingsCompanyPage />;
+      case 'user-settings':
+        return <UserSettingsPage user={user} />;
       default:
         return (
           <>
@@ -504,6 +507,7 @@ function App() {
                 onToggleSidebar={() => setMobileSidebarOpen(true)} 
                 user={user}
                 onLogout={handleLogout}
+                onPageChange={setCurrentPage}
               />
             </ErrorBoundary>
             

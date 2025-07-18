@@ -219,7 +219,7 @@ router.get('/email/config', requireAdmin, async (req, res) => {
 
 router.put('/email/config', requireAdmin, async (req, res) => {
   try {
-    const { host, port, encryption, username, password } = req.body;
+    const { host, port, encryption, username, password, fromAddress } = req.body;
 
     if (!host || !port || !username) {
       return res.status(400).json({
@@ -230,6 +230,7 @@ router.put('/email/config', requireAdmin, async (req, res) => {
 
     // Get existing config to preserve password if needed
     let existingPassword = '';
+    let existingFromAddress = '';
     try {
       const existingResult = await query(`
         SELECT value FROM app_settings WHERE key = 'email_config'
@@ -237,9 +238,10 @@ router.put('/email/config', requireAdmin, async (req, res) => {
       if (existingResult.rows.length > 0) {
         const existingConfig = existingResult.rows[0].value;
         existingPassword = existingConfig.password || '';
+        existingFromAddress = existingConfig.fromAddress || '';
       }
     } catch (err) {
-      // No existing config, continue with empty password
+      // No existing config, continue with empty values
     }
 
     const emailConfig = {
@@ -247,7 +249,8 @@ router.put('/email/config', requireAdmin, async (req, res) => {
       port: parseInt(port),
       encryption: encryption || 'ssl',
       username: username.trim(),
-      password: password || existingPassword // Use existing password if no new password provided
+      password: password || existingPassword, // Use existing password if no new password provided
+      fromAddress: fromAddress ? fromAddress.trim() : (existingFromAddress || username.trim())
     };
 
     if (emailConfig.port < 1 || emailConfig.port > 65535) {

@@ -163,6 +163,7 @@ export interface EmailServerConfig {
   encryption: 'none' | 'ssl' | 'tls';
   username: string;
   password: string;
+  fromAddress: string;
   testConnection?: boolean;
 }
 

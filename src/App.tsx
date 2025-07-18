@@ -133,11 +133,12 @@ function App() {
       console.log('✅ Dashboard metrics:', metricsResponse);
       console.log('✅ Employees data:', employeesResponse);
       
-      // Debug: Check employee risk scores
+      // Use employee data directly from API (consistent structure)
       const employees = employeesResponse.employees || employeesResponse;
-      console.log('🔍 Employee risk scores:');
+      
+      console.log('🔍 Dashboard Employee data:');
       employees.forEach((emp: any) => {
-        console.log(`- ${emp.name}: ${emp.riskScore}% (${emp.riskLevel})`);
+        console.log(`- ${emp.name}: ${emp.riskScore}% (${emp.riskLevel}) | Dept: ${emp.department}`);
       });
       
       const highRiskCount = employees.filter((emp: any) => emp.riskScore >= 65).length;
@@ -345,6 +346,8 @@ function App() {
                         key={employee.id}
                         employee={employee}
                         onViewDetails={fetchEmployeeDetails}
+                        layout="list"
+                        showMetrics={true}
                       />
                     ))}
                   </div>
@@ -529,11 +532,11 @@ function App() {
               <ErrorBoundary>
                 <EmployeeDetailsModal
                   employee={selectedEmployee}
+                  isOpen={!!selectedEmployee}
                   onClose={() => {
                     setSelectedEmployee(null);
                     setDetailedEmployee(null);
                   }}
-                  loading={loadingEmployeeDetails}
                 />
               </ErrorBoundary>
             )}

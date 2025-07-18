@@ -37,12 +37,14 @@ export const EmployeesPage: React.FC = () => {
   const [sortBy, setSortBy] = useState<'riskScore' | 'name' | 'department' | 'lastActivity'>('riskScore');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Simulate API call to fetch employees
+  // Fetch employees from API
   const fetchEmployees = async () => {
     setLoading(true);
     setError(null);
 
     try {
+      console.log('🔄 EmployeesPage: Fetching employees...');
+      
       const { data, error: fetchError } = await withErrorHandling(
         () => employeeAPI.getAll({ limit: 50 }),
         'EmployeesPage.fetchEmployees'
@@ -52,9 +54,17 @@ export const EmployeesPage: React.FC = () => {
         throw fetchError;
       }
 
-      // Handle the API response structure - it might be data.employees or just data
+      // Use employee data directly from API (consistent with dashboard)
       const employeesData = data?.employees || data || [];
+      
+      console.log('✅ EmployeesPage: Employees data:', employeesData);
+      console.log('🔍 EmployeesPage Employee data:');
+      employeesData.forEach((emp: any) => {
+        console.log(`- ${emp.name}: ${emp.riskScore}% (${emp.riskLevel}) | Dept: ${emp.department}`);
+      });
+      
       setEmployees(employeesData);
+      
     } catch (error) {
       const appError = error instanceof Error 
         ? createError(ErrorType.SERVER, 'Failed to load employee data. Please try again.', error, undefined, true)
@@ -431,58 +441,21 @@ export const EmployeesPage: React.FC = () => {
                 key={employee.id}
                 employee={employee}
                 onViewDetails={setSelectedEmployee}
+                layout="grid"
+                showMetrics={true}
               />
             ))}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {paginatedEmployees.map((employee) => (
-              <div
+              <EmployeeCard
                 key={employee.id}
-                className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
-                onClick={() => setSelectedEmployee(employee)}
-              >
-                <div className="flex items-center space-x-4">
-                  <div className="relative">
-                    <img 
-                      src={employee.photo} 
-                      alt={employee.name}
-                      className="w-12 h-12 rounded-full object-cover"
-                    />
-                    <div className={`absolute -top-1 -right-1 w-5 h-5 ${getRiskColor(employee.riskLevel)} rounded-full flex items-center justify-center`}>
-                      <span className="text-white text-xs font-bold">{employee.riskScore}</span>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{employee.name}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-300">{employee.role} • {employee.department}</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-4">
-                  <div className="text-right">
-                    <div className="flex items-center space-x-2">
-                      <Mail className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                      <span className="text-sm text-gray-600 dark:text-gray-300">{employee.metrics?.emailVolume || 0}</span>
-                    </div>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <Clock className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                      <span className="text-sm text-gray-600 dark:text-gray-300">{employee.metrics?.afterHoursActivity || 0}%</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    {(employee.violations?.length || 0) > 0 && (
-                      <div className="flex items-center space-x-1 text-red-600 dark:text-red-400">
-                        <AlertTriangle className="w-4 h-4" />
-                        <span className="text-sm">{employee.violations?.length || 0}</span>
-                      </div>
-                    )}
-                    <Eye className="w-5 h-5 text-gray-400 dark:text-gray-500" />
-                  </div>
-                </div>
-              </div>
+                employee={employee}
+                onViewDetails={setSelectedEmployee}
+                layout="list"
+                showMetrics={true}
+              />
             ))}
           </div>
         )}
@@ -575,6 +548,7 @@ export const EmployeesPage: React.FC = () => {
       {selectedEmployee && (
         <EmployeeDetailsModal
           employee={selectedEmployee}
+          isOpen={!!selectedEmployee}
           onClose={() => setSelectedEmployee(null)}
         />
       )}

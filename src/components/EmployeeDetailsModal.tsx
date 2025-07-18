@@ -1,18 +1,21 @@
-import React, { useState } from 'react';
-import { X, Mail, Users, Clock, Shield, TrendingUp, AlertTriangle, Calendar, Database, Activity, Eye, FileText, Zap } from 'lucide-react';
-import { Employee } from '../types';
+import React, { useState, useEffect } from 'react';
+import { 
+  X, Calendar, AlertTriangle, TrendingUp, Activity, Shield, Mail, Users, Clock, Database, Eye, FileText, Zap
+} from 'lucide-react';
+import { Employee, PolicyViolation } from '../types';
 import { getRiskColor, getRiskTextColor, formatTimeAgo } from '../utils/riskUtils';
-import { LoadingSpinner, InlineLoading } from './LoadingSpinner';
+import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
-import { AppError, ErrorType, createError, withErrorHandling, logError } from '../utils/errorUtils';
 import { EmailViewModal } from './EmailViewModal';
 import { ViolationStatusManager } from './ViolationStatusManager';
-import { violationAPI } from '../services/api';
+import { employeeAPI } from '../services/api';
+import { withErrorHandling, createError, ErrorType, logError } from '../utils/errorUtils';
+import { AppError } from '../types';
 
 interface EmployeeDetailsModalProps {
-  employee: Employee;
+  employee: Employee | null;
+  isOpen: boolean;
   onClose: () => void;
-  loading?: boolean;
 }
 
 // Avatar component for employee details modal
@@ -71,12 +74,10 @@ const ModalAvatar: React.FC<{ employee: Employee }> = ({ employee }) => {
         alt={employee.name}
         className={`w-full h-full object-cover ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
         onError={() => {
-          console.log('Modal image failed, showing initials for:', employee.name);
           setImageError(true);
           setImageLoading(false);
         }}
         onLoad={() => {
-          console.log('Modal image loaded successfully for:', employee.name);
           setImageLoading(false);
         }}
       />
@@ -84,66 +85,97 @@ const ModalAvatar: React.FC<{ employee: Employee }> = ({ employee }) => {
   );
 };
 
-export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ employee, onClose, loading = false }) => {
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<AppError | null>(null);
+export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ employee, isOpen, onClose }) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<AppError | null>(null);
+  const [detailedEmployee, setDetailedEmployee] = useState<Employee | null>(null);
+  const [violations, setViolations] = useState<PolicyViolation[]>([]);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
 
-  // Simulate API calls for actions
-  const simulateAction = async (actionType: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const delay = 1000 + Math.random() * 2000;
-      
-      setTimeout(() => {
-        // Simulate occasional failures
-        const shouldFail = Math.random() < 0.15; // 15% failure rate
-        
-        if (shouldFail) {
-          reject(new Error(`Failed to ${actionType.toLowerCase()}. Please try again.`));
-        } else {
-          resolve();
-        }
-      }, delay);
-    });
-  };
+  useEffect(() => {
+    if (employee && isOpen) {
+      fetchEmployeeDetails();
+    }
+  }, [employee, isOpen]);
 
-  const handleAction = async (actionType: string, actionLabel: string) => {
-    setActionLoading(actionType);
-    setActionError(null);
+  const fetchEmployeeDetails = async () => {
+    if (!employee) return;
+
+    setLoading(true);
+    setError(null);
 
     try {
-      const { error } = await withErrorHandling(
-        () => simulateAction(actionType),
-        `EmployeeDetailsModal.${actionType}`
+      console.log('🔄 Fetching detailed employee data for:', employee.name);
+      
+      const { data, error: fetchError } = await withErrorHandling(
+        () => employeeAPI.getById(Number(employee.id)),
+        'EmployeeDetailsModal.fetchEmployeeDetails'
       );
 
-      if (error) {
-        throw error;
+      if (fetchError) {
+        throw fetchError;
       }
 
-      // Success feedback could be added here
-      console.log(`${actionLabel} completed successfully for ${employee.name}`);
+      console.log('✅ Employee details fetched:', data);
+      
+      if (data.employee) {
+        setDetailedEmployee({
+          ...employee,
+          ...data.employee
+        });
+      }
+      
+      if (data.violations) {
+        setViolations(data.violations);
+      }
       
     } catch (error) {
       const appError = error instanceof Error 
-        ? createError(ErrorType.SERVER, `Failed to ${actionLabel.toLowerCase()}. Please try again.`, error, undefined, true)
+        ? createError(ErrorType.SERVER, 'Failed to load employee details. Please try again.', error, undefined, true)
         : error as AppError;
-
-      setActionError(appError);
-      logError(appError, 'EmployeeDetailsModal');
       
+      setError(appError);
+      logError(appError, 'EmployeeDetailsModal');
     } finally {
-      setActionLoading(null);
+      setLoading(false);
     }
   };
 
-
-
-  const retryLastAction = () => {
-    setActionError(null);
-    // In a real app, you might want to retry the last failed action
+  const handleRetry = () => {
+    setError(null);
+    fetchEmployeeDetails();
   };
+
+  if (!isOpen) {
+    return null;
+  }
+
+  if (loading && !detailedEmployee) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-black dark:bg-opacity-80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-black dark:bg-opacity-80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <ErrorMessage
+          message={error.message}
+          type="error"
+          onRetry={error.retryable ? () => fetchEmployeeDetails() : undefined}
+          dismissible
+          onDismiss={() => setError(null)}
+        />
+      </div>
+    );
+  }
+
+  if (!detailedEmployee) {
+    return null; // Should not happen if loading and error are handled
+  }
 
   const getRiskLevelIcon = (riskLevel: string) => {
     switch (riskLevel) {
@@ -176,33 +208,33 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
             <div className="flex items-start space-x-6">
               <div className="relative">
                 <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-white dark:border-gray-600 shadow-lg">
-                  <ModalAvatar employee={employee} />
+                  <ModalAvatar employee={detailedEmployee} />
                 </div>
-                <div className={`absolute -top-2 -right-2 w-10 h-10 ${getRiskColor(employee.riskLevel)} rounded-full flex items-center justify-center shadow-lg border-2 border-white dark:border-gray-600`}>
-                  <span className="text-white text-sm font-bold">{employee.riskScore}</span>
+                <div className={`absolute -top-2 -right-2 w-10 h-10 ${getRiskColor(detailedEmployee.riskLevel)} rounded-full flex items-center justify-center shadow-lg border-2 border-white dark:border-gray-600`}>
+                  <span className="text-white text-sm font-bold">{detailedEmployee.riskScore}</span>
                 </div>
               </div>
               
               <div className="flex-1">
                 <div className="flex items-center space-x-3 mb-2">
-                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{employee.name}</h1>
-                  <div className={`flex items-center space-x-2 px-3 py-1 rounded-full ${getRiskColor(employee.riskLevel)} bg-opacity-10 border border-current border-opacity-20`}>
-                    {getRiskLevelIcon(employee.riskLevel)}
-                    <span className={`text-sm font-semibold ${getRiskTextColor(employee.riskLevel)}`}>
-                      {employee.riskLevel} Risk
+                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{detailedEmployee.name}</h1>
+                  <div className={`flex items-center space-x-2 px-3 py-1 rounded-full ${getRiskColor(detailedEmployee.riskLevel)} bg-opacity-10 border border-current border-opacity-20`}>
+                    {getRiskLevelIcon(detailedEmployee.riskLevel)}
+                    <span className={`text-sm font-semibold ${getRiskTextColor(detailedEmployee.riskLevel)}`}>
+                      {detailedEmployee.riskLevel} Risk
                     </span>
                   </div>
                 </div>
                 
                 <div className="space-y-1 mb-4">
-                  <p className="text-lg text-gray-700 dark:text-gray-300 font-medium">{employee.role}</p>
-                  <p className="text-gray-600 dark:text-gray-400">{employee.department} Department</p>
-                  <p className="text-gray-500 dark:text-gray-400 font-mono text-sm">{employee.email}</p>
+                  <p className="text-lg text-gray-700 dark:text-gray-300 font-medium">{detailedEmployee.role}</p>
+                  <p className="text-gray-600 dark:text-gray-400">{detailedEmployee.department} Department</p>
+                  <p className="text-gray-500 dark:text-gray-400 font-mono text-sm">{detailedEmployee.email}</p>
                 </div>
                 
                 <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
                   <Calendar className="w-4 h-4 dark:text-gray-400" />
-                  <span>Last activity: {formatTimeAgo(employee.lastActivity)}</span>
+                  <span>Last activity: {formatTimeAgo(detailedEmployee.lastActivity)}</span>
                 </div>
               </div>
             </div>
@@ -236,9 +268,9 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                       This Week
                     </div>
                   </div>
-                  <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mb-1">{employee.metrics?.emailVolume || 0}</p>
+                  <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mb-1">{detailedEmployee.metrics?.emailVolume || 0}</p>
                   <p className="text-sm text-blue-700 dark:text-blue-200">
-                    {(employee.metrics?.emailVolume || 0) > 100 ? '↑ Above average' : '→ Normal range'}
+                    {(detailedEmployee.metrics?.emailVolume || 0) > 100 ? '↑ Above average' : '→ Normal range'}
                   </p>
                 </div>
                 
@@ -252,9 +284,9 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                       Unique
                     </div>
                   </div>
-                                  <p className="text-3xl font-bold text-green-900 dark:text-green-100 mb-1">{employee.metrics?.externalContacts || 0}</p>
+                                  <p className="text-3xl font-bold text-green-900 dark:text-green-100 mb-1">{detailedEmployee.metrics?.externalContacts || 0}</p>
                 <p className="text-sm text-green-700 dark:text-green-200">
-                  {(employee.metrics?.externalContacts || 0) > 15 ? '↑ High activity' : '→ Normal activity'}
+                  {(detailedEmployee.metrics?.externalContacts || 0) > 15 ? '↑ High activity' : '→ Normal activity'}
                 </p>
                 </div>
                 
@@ -268,27 +300,27 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                       Activity %
                     </div>
                   </div>
-                                  <p className="text-3xl font-bold text-orange-900 dark:text-orange-100 mb-1">{employee.metrics?.afterHoursActivity || 0}%</p>
+                                  <p className="text-3xl font-bold text-orange-900 dark:text-orange-100 mb-1">{detailedEmployee.metrics?.afterHoursActivity || 0}%</p>
                 <p className="text-sm text-orange-700 dark:text-orange-200">
-                  {(employee.metrics?.afterHoursActivity || 0) > 50 ? '⚠ Elevated' : '→ Normal pattern'}
+                  {(detailedEmployee.metrics?.afterHoursActivity || 0) > 50 ? '⚠ Elevated' : '→ Normal pattern'}
                 </p>
                 </div>
               </div>
             </div>
 
             {/* Policy Violations */}
-            {(employee.violations?.length || 0) > 0 && (
+            {(violations?.length || 0) > 0 && (
               <div>
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center space-x-2">
                   <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
                   <span>Security Violations</span>
                   <span className="text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-2 py-1 rounded-full">
-                    {employee.violations?.length || 0} Active
+                    {violations?.length || 0} Active
                   </span>
                 </h2>
                 
                 <div className="space-y-4">
-                  {(employee.violations || []).map((violation) => (
+                  {(violations || []).map((violation) => (
                     <div key={violation.id} className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 dark:border-red-400 rounded-lg p-6">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
@@ -436,7 +468,7 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                       <span className="font-medium text-gray-900 dark:text-white">Data Transfer</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{employee.metrics?.dataTransfer || 0} GB</span>
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">{detailedEmployee.metrics?.dataTransfer || 0} GB</span>
                       <p className="text-xs text-gray-500 dark:text-gray-400">This week</p>
                     </div>
                   </div>
@@ -447,7 +479,7 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                       <span className="font-medium text-gray-900 dark:text-white">Security Events</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{employee.metrics?.securityEvents || 0}</span>
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">{detailedEmployee.metrics?.securityEvents || 0}</span>
                       <p className="text-xs text-gray-500 dark:text-gray-400">Total events</p>
                     </div>
                   </div>
@@ -461,7 +493,7 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                       <span className="font-medium text-gray-900 dark:text-white">Behavior Change</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{employee.metrics?.behaviorChange || 0}%</span>
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">{detailedEmployee.metrics?.behaviorChange || 0}%</span>
                       <p className="text-xs text-gray-500 dark:text-gray-400">From baseline</p>
                     </div>
                   </div>
@@ -473,12 +505,12 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                     <div>
                       <div className="flex justify-between items-center mb-3">
                         <span className="text-sm text-purple-700 dark:text-purple-300">Overall Risk Score</span>
-                        <span className="font-bold text-purple-900 dark:text-purple-100">{employee.riskScore}/100</span>
+                        <span className="font-bold text-purple-900 dark:text-purple-100">{detailedEmployee.riskScore}/100</span>
                       </div>
                       <div className="w-full bg-purple-200 dark:bg-purple-800 rounded-full h-2 mb-4">
                         <div 
-                          className={`h-2 rounded-full ${getRiskColor(employee.riskLevel)}`}
-                          style={{ width: `${employee.riskScore}%` }}
+                          className={`h-2 rounded-full ${getRiskColor(detailedEmployee.riskLevel)}`}
+                          style={{ width: `${detailedEmployee.riskScore}%` }}
                         ></div>
                       </div>
                     </div>
@@ -487,28 +519,28 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                       <div className="bg-white dark:bg-gray-800/50 bg-opacity-50 rounded-lg p-4 mb-4">
                         <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-2">Risk Factors</h4>
                         <div className="space-y-1 text-sm text-purple-700 dark:text-purple-300">
-                          {(employee.metrics?.afterHoursActivity || 0) > 50 && (
+                          {(detailedEmployee.metrics?.afterHoursActivity || 0) > 50 && (
                             <div className="flex items-center space-x-2">
                               <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                              <span>High after-hours activity ({employee.metrics?.afterHoursActivity || 0}%)</span>
+                              <span>High after-hours activity ({detailedEmployee.metrics?.afterHoursActivity || 0}%)</span>
                             </div>
                           )}
-                          {(employee.metrics?.externalContacts || 0) > 15 && (
+                          {(detailedEmployee.metrics?.externalContacts || 0) > 15 && (
                             <div className="flex items-center space-x-2">
                               <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                              <span>Elevated external contacts ({employee.metrics?.externalContacts || 0})</span>
+                              <span>Elevated external contacts ({detailedEmployee.metrics?.externalContacts || 0})</span>
                             </div>
                           )}
-                          {(employee.metrics?.behaviorChange || 0) > 50 && (
+                          {(detailedEmployee.metrics?.behaviorChange || 0) > 50 && (
                             <div className="flex items-center space-x-2">
                               <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                              <span>Significant behavior change ({employee.metrics?.behaviorChange || 0}%)</span>
+                              <span>Significant behavior change ({detailedEmployee.metrics?.behaviorChange || 0}%)</span>
                             </div>
                           )}
-                          {(employee.violations?.length || 0) > 0 && (
+                          {(violations?.length || 0) > 0 && (
                             <div className="flex items-center space-x-2">
                               <div className="w-2 h-2 bg-red-600 rounded-full"></div>
-                              <span>Active policy violations ({employee.violations?.length || 0})</span>
+                              <span>Active policy violations ({violations?.length || 0})</span>
                             </div>
                           )}
                         </div>
@@ -516,9 +548,9 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                     </div>
                     
                     <p className="text-sm text-purple-700 dark:text-purple-300 leading-relaxed">
-                      {employee.riskLevel === 'Critical' ? 'Immediate attention required. Multiple risk factors detected.' :
-                       employee.riskLevel === 'High' ? 'Enhanced monitoring recommended. Several concerning patterns.' :
-                       employee.riskLevel === 'Medium' ? 'Standard monitoring sufficient. Some elevated activity.' :
+                      {detailedEmployee.riskLevel === 'Critical' ? 'Immediate attention required. Multiple risk factors detected.' :
+                       detailedEmployee.riskLevel === 'High' ? 'Enhanced monitoring recommended. Several concerning patterns.' :
+                       detailedEmployee.riskLevel === 'Medium' ? 'Standard monitoring sufficient. Some elevated activity.' :
                        'Low risk profile. Baseline monitoring appropriate.'}
                     </p>
                   </div>
@@ -527,69 +559,17 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
             </div>
 
             {/* Error Display */}
-            {actionError && (
+            {error && (
               <div className="pt-4">
                 <ErrorMessage
-                  message={actionError.message}
+                  message={error.message}
                   type="error"
-                  onRetry={actionError.retryable ? retryLastAction : undefined}
+                  onRetry={error.retryable ? () => fetchEmployeeDetails() : undefined}
                   dismissible
-                  onDismiss={() => setActionError(null)}
+                  onDismiss={() => setError(null)}
                 />
               </div>
             )}
-
-            {/* Enhanced Action Buttons */}
-            <div className="flex flex-wrap gap-4 pt-6 border-t border-gray-200 dark:border-gray-700 mt-auto">
-              <button 
-                onClick={() => handleAction('investigate', 'Start Investigation')}
-                disabled={!!actionLoading}
-                className="flex items-center space-x-2 px-6 py-3 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[160px] justify-center"
-              >
-                {actionLoading === 'investigate' ? (
-                  <LoadingSpinner size="sm" />
-                ) : (
-                  <Eye className="w-5 h-5" />
-                )}
-                <span>{actionLoading === 'investigate' ? 'Starting...' : 'Start Investigation'}</span>
-              </button>
-              <button 
-                onClick={() => handleAction('monitor', 'Monitor Activity')}
-                disabled={!!actionLoading}
-                className="flex items-center space-x-2 px-6 py-3 bg-yellow-600 dark:bg-yellow-500 text-white rounded-lg hover:bg-yellow-700 dark:hover:bg-yellow-600 transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[160px] justify-center"
-              >
-                {actionLoading === 'monitor' ? (
-                  <LoadingSpinner size="sm" />
-                ) : (
-                  <Clock className="w-5 h-5" />
-                )}
-                <span>{actionLoading === 'monitor' ? 'Setting up...' : 'Monitor Activity'}</span>
-              </button>
-              <button 
-                onClick={() => handleAction('report', 'Generate Report')}
-                disabled={!!actionLoading}
-                className="flex items-center space-x-2 px-6 py-3 bg-gray-600 dark:bg-gray-500 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[160px] justify-center"
-              >
-                {actionLoading === 'report' ? (
-                  <LoadingSpinner size="sm" />
-                ) : (
-                  <FileText className="w-5 h-5" />
-                )}
-                <span>{actionLoading === 'report' ? 'Generating...' : 'Generate Report'}</span>
-              </button>
-              <button 
-                onClick={() => handleAction('escalate', 'Escalate Threat')}
-                disabled={!!actionLoading}
-                className="flex items-center space-x-2 px-6 py-3 bg-red-600 dark:bg-red-500 text-white rounded-lg hover:bg-red-700 dark:hover:bg-red-600 transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[160px] justify-center"
-              >
-                {actionLoading === 'escalate' ? (
-                  <LoadingSpinner size="sm" />
-                ) : (
-                  <AlertTriangle className="w-5 h-5" />
-                )}
-                <span>{actionLoading === 'escalate' ? 'Escalating...' : 'Escalate Threat'}</span>
-              </button>
-            </div>
         </div>
       </div>
       

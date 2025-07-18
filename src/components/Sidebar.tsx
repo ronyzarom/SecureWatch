@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Mail,
   Building,
+  Bell,
   UserCheck,
   FileText,
   Database,
@@ -100,6 +101,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Email Server',
           icon: Mail,
           page: 'settings-email'
+        },
+        {
+          id: 'notifications',
+          label: 'Notifications',
+          icon: Bell,
+          page: 'notification-settings'
         },
         {
           id: 'company-details',

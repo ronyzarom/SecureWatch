@@ -163,6 +163,7 @@ export interface EmailServerConfig {
   encryption: 'none' | 'ssl' | 'tls';
   username: string;
   password: string;
+  fromAddress: string;
   testConnection?: boolean;
 }
 
@@ -185,3 +186,110 @@ export interface CompanyInfo {
   employeeCount: number;
   logoUrl?: string;
 }
+
+export interface Policy {
+  id: number;
+  name: string;
+  description: string;
+  policyLevel: 'global' | 'group' | 'user';
+  targetId?: number;
+  targetType?: string;
+  isActive: boolean;
+  priority: number;
+  
+  // NEW: Category-based configuration
+  categories?: number[]; // Selected threat category IDs
+  categoryRules?: PolicyCategoryRule[]; // Category-specific rules
+  
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  stats: {
+    conditions: number;
+    actions: number;
+    recentExecutions: number;
+    categoriesUsed?: number; // NEW
+  };
+}
+
+// NEW: Policy Category Rule interface
+export interface PolicyCategoryRule {
+  id: number;
+  policyId: number;
+  categoryId: number;
+  categoryName?: string; // For display purposes
+  
+  // Rule Configuration
+  isEnabled: boolean;
+  customThreshold?: number;
+  customRiskScore?: number;
+  customKeywords: string[];
+  
+  // Behavioral Rules
+  frequencyLimit?: number;
+  timeWindowHours: number;
+  requireMultipleIndicators: boolean;
+  
+  // Actions
+  actionConfig: CategoryActionConfig;
+  
+  createdAt: string;
+  updatedAt: string;
+}
+
+// NEW: Category Action Configuration
+export interface CategoryActionConfig {
+  emailAlert?: boolean;
+  escalate?: boolean;
+  lockdown?: boolean;
+  increaseMonitoring?: boolean;
+  notifyManager?: boolean;
+  complianceAlert?: boolean;
+  fraudInvestigation?: boolean;
+  immediateAlert?: boolean;
+  dataAccessReview?: boolean;
+  behavioralAnalysis?: boolean;
+  
+  // Custom action parameters
+  alertRecipients?: string[];
+  escalationLevel?: 'low' | 'medium' | 'high' | 'critical';
+  lockdownDuration?: number; // minutes
+  monitoringDuration?: number; // hours
+  customMessage?: string;
+}
+
+// Updated condition types to include category-based conditions
+export type PolicyConditionType = 
+  | 'risk_score'
+  | 'violation_severity' 
+  | 'data_access'
+  | 'time_based'
+  | 'frequency'
+  | 'any_violation'
+  // NEW: Category-based conditions
+  | 'category_match'
+  | 'category_score'
+  | 'category_frequency'
+  | 'behavioral_anomaly'
+  | 'custom_pattern'
+  | 'communication_pattern'
+  | 'data_access_anomaly'
+  | 'time_pattern_deviation'
+  | 'relationship_change';
+
+// Enhanced action types
+export type PolicyActionType = 
+  | 'email_alert'
+  | 'escalate_incident'
+  | 'increase_monitoring'
+  | 'disable_access'
+  | 'log_detailed_activity'
+  | 'immediate_alert'
+  // NEW: Category-specific actions
+  | 'category_investigation'
+  | 'behavioral_analysis'
+  | 'data_access_review'
+  | 'manager_notification'
+  | 'compliance_alert'
+  | 'fraud_investigation'
+  | 'immediate_lockdown';

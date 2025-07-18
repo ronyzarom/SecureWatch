@@ -1,11 +1,13 @@
 const natural = require('natural');
 const sentiment = require('sentiment');
+const OpenAI = require('openai');
 
 /**
  * AI-Powered Email Risk Analysis Service
  * 
  * This service analyzes employee emails to assess security risks using:
  * - Natural Language Processing
+ * - LLM-Powered Category Analysis
  * - Behavioral Pattern Analysis
  * - Anomaly Detection
  * - Risk Scoring Algorithms
@@ -17,6 +19,18 @@ class EmailRiskAnalyzer {
     this.sentiment = new sentiment();
     this.tokenizer = new natural.WordTokenizer();
     this.stemmer = natural.PorterStemmer;
+    
+    // Initialize OpenAI for LLM analysis
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here'
+    });
+    
+    // LLM Configuration
+    this.llmConfig = {
+      model: 'gpt-4o-mini',
+      temperature: 0.1, // Low temperature for consistent analysis
+      maxTokens: 1000
+    };
     
     // Risk patterns and keywords
     this.riskPatterns = {
@@ -391,6 +405,291 @@ class EmailRiskAnalyzer {
     }
 
     return result;
+  }
+
+  /**
+   * LLM-Powered Category Analysis
+   * Uses sophisticated AI to analyze email content for specific threat categories
+   */
+  async analyzeCategoryWithLLM(email, category) {
+    try {
+      const content = `Subject: ${email.subject || 'No subject'}\n\nBody: ${email.bodyText || email.body || 'No body content'}`;
+      
+      // Create category-specific analysis prompt
+      const prompt = this.createCategoryPrompt(category, content);
+      
+      console.log(`🤖 LLM analyzing email for category: ${category.name}`);
+      
+      const response = await this.openai.chat.completions.create({
+        model: this.llmConfig.model,
+        temperature: this.llmConfig.temperature,
+        max_tokens: this.llmConfig.maxTokens,
+        messages: [
+          {
+            role: "system",
+            content: "You are a cybersecurity expert analyzing employee emails for security threats. Provide precise, actionable analysis."
+          },
+          {
+            role: "user", 
+            content: prompt
+          }
+        ]
+      });
+
+      const analysis = JSON.parse(response.choices[0].message.content);
+      
+      return {
+        categoryId: category.id,
+        categoryName: category.name,
+        riskScore: analysis.risk_score || 0,
+        confidence: analysis.confidence || 0,
+        reasoning: analysis.reasoning || '',
+        detectedPatterns: analysis.detected_patterns || [],
+        recommendations: analysis.recommendations || [],
+        violations: analysis.violations || [],
+        llmAnalysis: true
+      };
+
+    } catch (error) {
+      console.error(`Error in LLM category analysis for ${category.name}:`, error);
+      return {
+        categoryId: category.id,
+        categoryName: category.name,
+        riskScore: 0,
+        confidence: 0,
+        reasoning: 'LLM analysis failed',
+        detectedPatterns: [],
+        recommendations: [],
+        violations: [],
+        llmAnalysis: false
+      };
+    }
+  }
+
+  /**
+   * Create category-specific prompts for LLM analysis
+   */
+  createCategoryPrompt(category, emailContent) {
+    const basePrompt = `
+Analyze this email for threats related to "${category.name}":
+Category Description: ${category.description}
+Severity Level: ${category.severity}
+Base Risk Score: ${category.baseRiskScore}
+
+EMAIL CONTENT:
+${emailContent}
+
+ANALYSIS TASK:
+1. Determine if this email contains indicators of "${category.name}"
+2. Consider context, intent, and subtle indicators beyond simple keyword matching
+3. Account for false positives (normal business communication that might contain similar words)
+4. Evaluate the severity and immediacy of any threats detected
+
+Respond with JSON in this exact format:
+{
+  "risk_score": [0-100 integer],
+  "confidence": [0-100 integer],
+  "reasoning": "[detailed explanation of analysis]",
+  "detected_patterns": ["pattern1", "pattern2"],
+  "violations": ["violation1", "violation2"],
+  "recommendations": ["recommendation1", "recommendation2"]
+}`;
+
+    // Add category-specific guidance
+    if (category.name.toLowerCase().includes('data exfiltration')) {
+      return basePrompt + `\n\nSPECIFIC FOCUS:
+- Look for attempts to export, download, or transfer sensitive data
+- Consider external recipients, personal accounts, cloud storage mentions
+- Evaluate data volume indicators and urgency patterns
+- Distinguish between legitimate data sharing and potential theft`;
+    }
+    
+    if (category.name.toLowerCase().includes('intellectual property')) {
+      return basePrompt + `\n\nSPECIFIC FOCUS:
+- Identify mentions of proprietary information, trade secrets, source code
+- Look for competitor-related communications
+- Evaluate research data, design files, patent information sharing
+- Consider the recipient context and business justification`;
+    }
+
+    if (category.name.toLowerCase().includes('expense fraud')) {
+      return basePrompt + `\n\nSPECIFIC FOCUS:
+- Detect suspicious expense claims, duplicate receipts, inflated amounts
+- Look for personal expenses being claimed as business expenses
+- Identify vendor manipulation or kickback schemes
+- Consider submission timing and approval bypass attempts`;
+    }
+
+    if (category.name.toLowerCase().includes('pre-termination')) {
+      return basePrompt + `\n\nSPECIFIC FOCUS:
+- Identify signs of employee planning to leave (job search, resignation hints)
+- Look for data hoarding or access pattern changes
+- Detect competitor communication or external job opportunities
+- Consider behavioral changes and meeting decline patterns`;
+    }
+
+    return basePrompt;
+  }
+
+  /**
+   * Enhanced category analysis combining keywords and LLM
+   */
+  async analyzeWithCustomCategories(email, categories) {
+    const results = [];
+    
+    for (const category of categories) {
+      if (!category.isActive) continue;
+      
+      try {
+        // Determine analysis method based on category configuration
+        const useLLM = this.shouldUseLLMForCategory(category);
+        
+        let analysis;
+        if (useLLM && this.isLLMAvailable()) {
+          // Use sophisticated LLM analysis for complex categories
+          analysis = await this.analyzeCategoryWithLLM(email, category);
+        } else {
+          // Fall back to keyword-based analysis
+          analysis = this.analyzeKeywordBased(email, category);
+        }
+        
+        // Apply category-specific risk multipliers
+        analysis.finalRiskScore = this.applyRiskMultipliers(
+          analysis.riskScore, 
+          category.riskMultipliers, 
+          email
+        );
+        
+        // Check if score exceeds thresholds
+        analysis.triggersAlert = analysis.finalRiskScore >= category.alertThreshold;
+        analysis.triggersInvestigation = analysis.finalRiskScore >= category.investigationThreshold;
+        analysis.triggersCritical = analysis.finalRiskScore >= category.criticalThreshold;
+        
+        if (analysis.finalRiskScore > 0) {
+          results.push(analysis);
+        }
+        
+      } catch (error) {
+        console.error(`Error analyzing category ${category.name}:`, error);
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Determine if category should use LLM analysis
+   */
+  shouldUseLLMForCategory(category) {
+    // Use LLM for complex behavioral and contextual categories
+    const llmCategories = [
+      'data exfiltration',
+      'intellectual property',
+      'pre-termination indicators',
+      'competitor communication',
+      'expense fraud',
+      'vendor kickbacks'
+    ];
+    
+    return llmCategories.some(llmCat => 
+      category.name.toLowerCase().includes(llmCat.toLowerCase())
+    );
+  }
+
+  /**
+   * Keyword-based analysis for simpler categories
+   */
+  analyzeKeywordBased(email, category) {
+    const content = `${email.subject || ''} ${email.bodyText || ''}`.toLowerCase();
+    let score = 0;
+    const detectedPatterns = [];
+    const matchedKeywords = [];
+    
+    // Analyze keywords if available
+    if (category.keywords && category.keywords.length > 0) {
+      category.keywords.forEach(keywordObj => {
+        const keyword = typeof keywordObj === 'string' ? keywordObj : keywordObj.keyword;
+        const weight = typeof keywordObj === 'string' ? 1.0 : (keywordObj.weight || 1.0);
+        
+        if (content.includes(keyword.toLowerCase())) {
+          score += category.baseRiskScore * weight * 0.1; // Scale factor
+          matchedKeywords.push(keyword);
+          detectedPatterns.push(`Keyword match: "${keyword}"`);
+        }
+      });
+    }
+    
+    return {
+      categoryId: category.id,
+      categoryName: category.name,
+      riskScore: Math.min(score, 100),
+      confidence: matchedKeywords.length > 0 ? 75 : 0,
+      reasoning: `Keyword analysis detected ${matchedKeywords.length} matching terms`,
+      detectedPatterns,
+      recommendations: score > 50 ? ['Review email context', 'Verify business justification'] : [],
+      violations: score > 70 ? [`${category.name} policy violation`] : [],
+      llmAnalysis: false,
+      matchedKeywords
+    };
+  }
+
+  /**
+   * Apply risk multipliers based on email context
+   */
+  applyRiskMultipliers(baseScore, multipliers, email) {
+    let finalScore = baseScore;
+    
+    if (multipliers && typeof multipliers === 'object') {
+      // Time-based multipliers
+      if (multipliers.after_hours && this.isAfterHours(email.timestamp)) {
+        finalScore *= multipliers.after_hours;
+      }
+      
+      // External recipient multiplier
+      if (multipliers.external_recipient && this.hasExternalRecipients(email)) {
+        finalScore *= multipliers.external_recipient;
+      }
+      
+      // Frequency multiplier (would need historical data)
+      if (multipliers.frequency) {
+        // This would require analyzing email frequency patterns
+        // For now, apply a moderate increase for high-frequency categories
+        finalScore *= 1.1;
+      }
+    }
+    
+    return Math.min(finalScore, 100);
+  }
+
+  /**
+   * Check if LLM is available and configured
+   */
+  isLLMAvailable() {
+    return !!(process.env.OPENAI_API_KEY && 
+             process.env.OPENAI_API_KEY !== 'your-api-key-here');
+  }
+
+  /**
+   * Helper: Check if email was sent after hours
+   */
+  isAfterHours(timestamp) {
+    if (!timestamp) return false;
+    const date = new Date(timestamp);
+    const hour = date.getHours();
+    return hour < 8 || hour > 18; // Outside 8 AM - 6 PM
+  }
+
+  /**
+   * Helper: Check if email has external recipients
+   */
+  hasExternalRecipients(email) {
+    // This would need to be enhanced with actual domain checking
+    const externalDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'];
+    const recipients = email.recipients || [];
+    
+    return recipients.some(recipient => 
+      externalDomains.some(domain => recipient.includes(domain))
+    );
   }
 
   /**
@@ -846,4 +1145,4 @@ class EmailRiskAnalyzer {
   }
 }
 
-module.exports = new EmailRiskAnalyzer(); 
+module.exports = EmailRiskAnalyzer; 

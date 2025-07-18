@@ -10,15 +10,19 @@ const PORT = process.env.PORT || 3001;
 
 // Import routes
 const authRoutes = require('./src/routes/auth');
-const dashboardRoutes = require('./src/routes/dashboard');
 const employeeRoutes = require('./src/routes/employees');
+const dashboardRoutes = require('./src/routes/dashboard');
+const emailRoutes = require('./src/routes/emails');
+const violationRoutes = require('./src/routes/violations');
+const activityReportsRoutes = require('./src/routes/activity-reports');
 const userRoutes = require('./src/routes/users');
+const adminRoutes = require('./src/routes/admin');
+const policyRoutes = require('./src/routes/policies');
 const chatRoutes = require('./src/routes/chat');
 const settingsRoutes = require('./src/routes/settings');
-const emailRoutes = require('./src/routes/emails');
-const policiesRoutes = require('./src/routes/policies');
 const integrationsRoutes = require('./src/routes/integrations');
-const adminRoutes = require('./src/routes/admin');
+const categoriesRoutes = require('./src/routes/categories');
+const mfaRoutes = require('./src/routes/mfa');
 
 // Import services
 const policyActionExecutor = require('./src/services/policyActionExecutor');
@@ -105,15 +109,19 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/employees', employeeRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/emails', emailRoutes);
+app.use('/api/violations', violationRoutes);
+app.use('/api/activity-reports', activityReportsRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/policies', policyRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api/emails', emailRoutes);
-app.use('/api/policies', policiesRoutes);
 app.use('/api/integrations', integrationsRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/categories', categoriesRoutes);
+app.use('/api/mfa', mfaRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

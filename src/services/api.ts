@@ -193,10 +193,13 @@ export const employeeAPI = {
 // ============================================================
 
 export const chatAPI = {
-  sendMessage: async (message: string, employeeContext?: number) => {
+  sendMessage: async (message: string, employeeId?: number) => {
+    // No frontend timeout - let backend handle LLM processing time
     const response = await api.post('/api/chat/message', { 
       message, 
-      employeeContext 
+      employeeId 
+    }, {
+      timeout: 0 // No timeout - backend controls this
     });
     return response.data;
   },
@@ -217,6 +220,52 @@ export const chatAPI = {
 
   clearHistory: async () => {
     const response = await api.delete('/api/chat/history');
+    return response.data;
+  }
+};
+
+// ============================================================
+// VIOLATIONS MANAGEMENT 
+// ============================================================
+
+export const violationAPI = {
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    severity?: string;
+    employeeId?: number;
+    sortBy?: string;
+    sortOrder?: string;
+  }) => {
+    const response = await api.get('/api/violations', { params });
+    return response.data;
+  },
+
+  getById: async (id: number) => {
+    const response = await api.get(`/api/violations/${id}`);
+    return response.data;
+  },
+
+  updateStatus: async (id: number, status: string, reason: string, aiAssisted = false) => {
+    const response = await api.put(`/api/violations/${id}/status`, {
+      status,
+      reason,
+      aiAssisted
+    });
+    return response.data;
+  },
+
+  requestAIValidation: async (id: number, validationType = 'evidence_validation', additionalContext?: string) => {
+    const response = await api.post(`/api/violations/${id}/ai-validate`, {
+      validationType,
+      additionalContext
+    });
+    return response.data;
+  },
+
+  getStatistics: async () => {
+    const response = await api.get('/api/violations/stats');
     return response.data;
   }
 };
@@ -315,6 +364,95 @@ export const settingsAPI = {
 
   updateDashboard: async (dashboardConfig: any) => {
     const response = await api.put('/api/settings/dashboard', dashboardConfig);
+    return response.data;
+  }
+};
+
+// ============================================================
+// CATEGORIES
+// ============================================================
+
+export const categoryAPI = {
+  getAll: async (includeKeywords: boolean = false) => {
+    const response = await api.get(`/api/categories?includeKeywords=${includeKeywords}`);
+    return response.data;
+  },
+
+  getById: async (id: number) => {
+    const response = await api.get(`/api/categories/${id}`);
+    return response.data;
+  },
+
+  create: async (categoryData: any) => {
+    const response = await api.post('/api/categories', categoryData);
+    return response.data;
+  },
+
+  update: async (id: number, categoryData: any) => {
+    const response = await api.put(`/api/categories/${id}`, categoryData);
+    return response.data;
+  },
+
+  delete: async (id: number) => {
+    const response = await api.delete(`/api/categories/${id}`);
+    return response.data;
+  },
+
+  getStats: async () => {
+    const response = await api.get('/api/categories/stats/overview');
+    return response.data;
+  },
+
+  getTemplates: async () => {
+    const response = await api.get('/api/categories/templates');
+    return response.data;
+  }
+};
+
+export const activityReportsAPI = {
+  // Get activity overview statistics
+  getOverview: async (params?: {
+    days?: number;
+    department?: string;
+  }) => {
+    const response = await api.get('/api/activity-reports/overview', { params });
+    return response.data;
+  },
+
+  // Get detailed activity report for specific employee
+  getEmployeeReport: async (employeeId: number, days: number = 30) => {
+    const response = await api.get(`/api/activity-reports/employee/${employeeId}`, {
+      params: { days }
+    });
+    return response.data;
+  },
+
+  // Get activity trends and patterns
+  getTrends: async (params?: {
+    days?: number;
+    groupBy?: 'day' | 'week' | 'month';
+  }) => {
+    const response = await api.get('/api/activity-reports/trends', { params });
+    return response.data;
+  },
+
+  // Detect activity anomalies
+  getAnomalies: async (params?: {
+    days?: number;
+    threshold?: number;
+  }) => {
+    const response = await api.get('/api/activity-reports/anomalies', { params });
+    return response.data;
+  },
+
+  // Compare activity between employees or departments
+  getComparison: async (params: {
+    type: 'employees' | 'departments';
+    days?: number;
+    ids?: string; // comma-separated employee IDs
+    departments?: string; // comma-separated department names
+  }) => {
+    const response = await api.get('/api/activity-reports/comparison', { params });
     return response.data;
   }
 };

@@ -15,7 +15,11 @@ import { UsersPage } from './pages/UsersPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { SettingsEmailPage } from './pages/SettingsEmailPage';
 import { SettingsCompanyPage } from './pages/SettingsCompanyPage';
+import { UserSettingsPage } from './pages/UserSettingsPage';
 import { PoliciesPage } from './pages/PoliciesPage';
+import { CategoriesPage } from './pages/CategoriesPage';
+import { ViolationsPage } from './pages/ViolationsPage';
+import { ActivityReportsPage } from './pages/ActivityReportsPage';
 // Mock data imports removed - now using real API data
 import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';
@@ -142,7 +146,7 @@ function App() {
     } catch (error) {
       console.error('❌ Failed to fetch dashboard data:', error);
       setError('Failed to load dashboard data');
-      logError(error as Error, { component: 'App', action: 'fetchDashboardData' });
+      logError(error as Error, 'App.fetchDashboardData');
     } finally {
       setLoading(false);
     }
@@ -169,7 +173,7 @@ function App() {
     try {
       console.log('🔄 Fetching detailed employee data for:', employee.name);
       
-      const response = await employeeAPI.getById(employee.id);
+      const response = await employeeAPI.getById(Number(employee.id));
       console.log('✅ Employee details:', response);
       
       // Create detailed employee object with all data
@@ -193,7 +197,7 @@ function App() {
     } catch (error) {
       console.error('❌ Failed to fetch employee details:', error);
       setError('Failed to load employee details');
-      logError(error as Error, { component: 'App', action: 'fetchEmployeeDetails', employeeId: employee.id });
+      logError(error as Error, `App.fetchEmployeeDetails.${employee.id}`);
       
       // Fallback: show basic employee data
       setSelectedEmployee(employee);
@@ -231,10 +235,18 @@ function App() {
         return <UsersPage />;
       case 'policies':
         return <PoliciesPage />;
+      case 'categories':
+        return <CategoriesPage />;
+      case 'violations':
+        return <ViolationsPage />;
+      case 'activity-reports':
+        return <ActivityReportsPage />;
       case 'settings-email':
         return <SettingsEmailPage />;
       case 'settings-company':
         return <SettingsCompanyPage />;
+      case 'user-settings':
+        return <UserSettingsPage user={user} />;
       default:
         return (
           <>
@@ -495,11 +507,14 @@ function App() {
                 onToggleSidebar={() => setMobileSidebarOpen(true)} 
                 user={user}
                 onLogout={handleLogout}
+                onPageChange={setCurrentPage}
               />
             </ErrorBoundary>
             
             <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
               <ErrorBoundary>
+                {currentPage === 'violations' && <ViolationsPage />}
+                {currentPage === 'activity-reports' && <ActivityReportsPage />}
                 {renderPage()}
               </ErrorBoundary>
             </main>

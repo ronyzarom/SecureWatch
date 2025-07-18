@@ -227,15 +227,95 @@ CREATE TABLE violations (
 -- EMAIL COMMUNICATIONS TABLE
 CREATE TABLE email_communications (
   id SERIAL PRIMARY KEY,
-  employee_id INTEGER REFERENCES employees(id),
-  sender_email VARCHAR(255),
-  recipient_emails TEXT, -- JSON array of recipients
-  subject VARCHAR(500),
+  message_id VARCHAR(255) NOT NULL UNIQUE,
+  thread_id VARCHAR(255),
+  integration_source VARCHAR(20) NOT NULL, -- 'office365', 'google_workspace'
+  sender_employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+  sender_email VARCHAR(255) NOT NULL,
+  recipients JSONB NOT NULL, -- JSON array of recipients
+  subject TEXT,
   body_text TEXT,
-  sent_at TIMESTAMP,
+  body_html TEXT,
+  attachments JSONB,
+  sent_at TIMESTAMP NOT NULL,
+  received_at TIMESTAMP DEFAULT NOW(),
   risk_score INTEGER DEFAULT 0, -- 0-100 scale
-  risk_flags TEXT[], -- Array of risk indicators
+  risk_flags JSONB DEFAULT '{}', -- JSON object of risk indicators
+  category VARCHAR(50) DEFAULT 'internal', -- internal, external, suspicious
   is_flagged BOOLEAN DEFAULT false,
+  is_analyzed BOOLEAN DEFAULT false,
+  analyzed_at TIMESTAMP,
+  analyzer_version VARCHAR(50),
+  sync_status VARCHAR(20) DEFAULT 'pending', -- pending, processed, error, skipped
+  sync_error TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- THREAT CATEGORIES TABLE (Custom Categories System)
+CREATE TABLE threat_categories (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  description TEXT,
+  category_type VARCHAR(50) NOT NULL, -- 'predefined', 'custom', 'industry_specific'
+  industry VARCHAR(100), -- Healthcare, Finance, Technology, etc.
+  base_risk_score INTEGER DEFAULT 50, -- 0-100 scale
+  severity VARCHAR(20) DEFAULT 'Medium', -- Critical, High, Medium, Low
+  alert_threshold INTEGER DEFAULT 70,
+  investigation_threshold INTEGER DEFAULT 85,
+  critical_threshold INTEGER DEFAULT 95,
+  detection_patterns JSONB DEFAULT '{}',
+  risk_multipliers JSONB DEFAULT '{}',
+  is_active BOOLEAN DEFAULT true,
+  is_system_category BOOLEAN DEFAULT false,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- CATEGORY KEYWORDS TABLE
+CREATE TABLE category_keywords (
+  id SERIAL PRIMARY KEY,
+  category_id INTEGER REFERENCES threat_categories(id) ON DELETE CASCADE,
+  keyword VARCHAR(255) NOT NULL,
+  weight DECIMAL(3,2) DEFAULT 1.0, -- Keyword importance multiplier
+  is_phrase BOOLEAN DEFAULT false,
+  context_required VARCHAR(255),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- POLICY CATEGORY RULES TABLE
+CREATE TABLE policy_category_rules (
+  id SERIAL PRIMARY KEY,
+  policy_id INTEGER REFERENCES security_policies(id) ON DELETE CASCADE,
+  category_id INTEGER REFERENCES threat_categories(id) ON DELETE CASCADE,
+  is_enabled BOOLEAN DEFAULT true,
+  custom_threshold INTEGER,
+  custom_risk_score INTEGER,
+  custom_keywords JSONB DEFAULT '[]',
+  frequency_limit INTEGER,
+  time_window_hours INTEGER DEFAULT 24,
+  require_multiple_indicators BOOLEAN DEFAULT false,
+  action_config JSONB DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- CATEGORY DETECTION RESULTS TABLE
+CREATE TABLE category_detection_results (
+  id SERIAL PRIMARY KEY,
+  email_id INTEGER REFERENCES email_communications(id) ON DELETE CASCADE,
+  employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+  category_id INTEGER REFERENCES threat_categories(id) ON DELETE CASCADE,
+  matched_keywords JSONB DEFAULT '[]',
+  pattern_matches JSONB DEFAULT '[]',
+  confidence_score DECIMAL(5,2) DEFAULT 0.0, -- 0.0 to 100.0
+  risk_score INTEGER DEFAULT 0, -- 0-100 scale
+  detection_context JSONB DEFAULT '{}',
+  false_positive BOOLEAN,
+  analyst_notes TEXT,
+  analyzed_at TIMESTAMP DEFAULT NOW(),
+  analyzer_version VARCHAR(50) DEFAULT '1.0.0',
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -290,6 +370,24 @@ SELECT COUNT(*) as total_violations, severity, COUNT(*) FROM violations GROUP BY
 
 User: "Recent security incidents"
 SELECT v.type, v.severity, v.description, e.name, v.created_at FROM violations v JOIN employees e ON v.employee_id = e.id WHERE v.created_at >= NOW() - INTERVAL '30 days' ORDER BY v.created_at DESC LIMIT 10;
+
+User: "Show me all threat categories"
+SELECT name, description, severity, base_risk_score, category_type FROM threat_categories WHERE is_active = true ORDER BY base_risk_score DESC;
+
+User: "What are the highest risk custom categories?"
+SELECT tc.name, tc.description, tc.severity, tc.base_risk_score, COUNT(ck.id) as keyword_count FROM threat_categories tc LEFT JOIN category_keywords ck ON tc.id = ck.category_id WHERE tc.category_type = 'custom' AND tc.is_active = true GROUP BY tc.id ORDER BY tc.base_risk_score DESC LIMIT 10;
+
+User: "Recent threat detections"
+SELECT tc.name as category_name, e.name as employee_name, cdr.risk_score, cdr.confidence_score, cdr.analyzed_at FROM category_detection_results cdr JOIN threat_categories tc ON cdr.category_id = tc.id JOIN employees e ON cdr.employee_id = e.id WHERE cdr.analyzed_at >= NOW() - INTERVAL '7 days' ORDER BY cdr.risk_score DESC LIMIT 15;
+
+User: "Show keywords for Data Exfiltration category"
+SELECT ck.keyword, ck.weight, ck.is_phrase FROM category_keywords ck JOIN threat_categories tc ON ck.category_id = tc.id WHERE tc.name = 'Data Exfiltration' ORDER BY ck.weight DESC;
+
+User: "Show emails from employee Niv Gorsky"
+SELECT ec.subject, ec.sender_email, ec.recipients, ec.sent_at, ec.risk_score FROM email_communications ec JOIN employees e ON ec.sender_employee_id = e.id WHERE e.name ILIKE '%Niv Gorsky%' ORDER BY ec.sent_at DESC LIMIT 10;
+
+User: "High risk emails in the last week"
+SELECT ec.subject, e.name as sender_name, ec.risk_score, ec.risk_flags, ec.sent_at FROM email_communications ec JOIN employees e ON ec.sender_employee_id = e.id WHERE ec.risk_score > 70 AND ec.sent_at >= NOW() - INTERVAL '7 days' ORDER BY ec.risk_score DESC LIMIT 15;
 `;
 
 // System instructions for Stage 2 (Response Generation)

@@ -10,6 +10,7 @@ export const SettingsEmailPage: React.FC = () => {
     encryption: 'tls',
     username: '',
     password: '',
+    fromAddress: '',
     testConnection: false
   });
 
@@ -40,6 +41,7 @@ export const SettingsEmailPage: React.FC = () => {
           encryption: data.emailConfig.encryption || 'tls',
           username: data.emailConfig.username || '',
           password: '', // Don't show saved password
+          fromAddress: data.emailConfig.fromAddress || '',
           testConnection: false
         });
       }
@@ -205,6 +207,22 @@ export const SettingsEmailPage: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    From Address
+                  </label>
+                  <input
+                    type="email"
+                    value={config.fromAddress}
+                    onChange={(e) => handleInputChange('fromAddress', e.target.value)}
+                    placeholder="noreply@company.com"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    The email address that will appear as the sender in all outgoing emails
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Username
                   </label>
                   <input
@@ -214,6 +232,9 @@ export const SettingsEmailPage: React.FC = () => {
                     placeholder="security@company.com"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    SMTP authentication username (may be different from from address)
+                  </p>
                 </div>
                 
                 <div>

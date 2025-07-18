@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Shield } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
+import SecureWatchLogoPng from '../assets/SecureWatchLogo.png';
 import { authAPI } from '../services/api';
 
 interface LoginPageProps {
@@ -38,9 +39,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <div className="p-3 bg-blue-600 rounded-full">
-                <Shield className="w-8 h-8 text-white" />
-              </div>
+              <img 
+                src={SecureWatchLogoPng} 
+                alt="SecureWatch Logo" 
+                className="w-16 h-16 drop-shadow-lg"
+              />
             </div>
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white">SecureWatch</h2>
             <p className="mt-2 text-gray-600 dark:text-gray-400">Sign in to your account</p>

@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  Shield, 
   Users, 
   Settings, 
   Plug, 
@@ -12,8 +11,10 @@ import {
   UserCheck,
   FileText,
   Database,
-  AlertTriangle
+  AlertTriangle,
+  TrendingUp
 } from 'lucide-react';
+import SecureWatchLogoPng from '../assets/SecureWatchLogo.png';
 
 interface SidebarProps {
   currentPage: string;
@@ -77,6 +78,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       page: 'violations'
     },
     {
+      id: 'activity-reports',
+      label: 'Activity Reports',
+      icon: TrendingUp,
+      page: 'activity-reports'
+    },
+    {
       id: 'settings',
       label: 'Settings',
       icon: Settings,
@@ -117,7 +124,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onClick={onToggleCollapse}
       >
         <div className="flex items-center space-x-3">
-          <Shield className="w-8 h-8 text-blue-400 flex-shrink-0" />
+          <img 
+            src={SecureWatchLogoPng} 
+            alt="SecureWatch Logo" 
+            className="w-8 h-8 flex-shrink-0"
+          />
           {!isCollapsed && (
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">SecureWatch</h1>
           )}

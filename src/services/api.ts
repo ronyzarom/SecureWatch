@@ -409,5 +409,53 @@ export const categoryAPI = {
   }
 };
 
+export const activityReportsAPI = {
+  // Get activity overview statistics
+  getOverview: async (params?: {
+    days?: number;
+    department?: string;
+  }) => {
+    const response = await api.get('/api/activity-reports/overview', { params });
+    return response.data;
+  },
+
+  // Get detailed activity report for specific employee
+  getEmployeeReport: async (employeeId: number, days: number = 30) => {
+    const response = await api.get(`/api/activity-reports/employee/${employeeId}`, {
+      params: { days }
+    });
+    return response.data;
+  },
+
+  // Get activity trends and patterns
+  getTrends: async (params?: {
+    days?: number;
+    groupBy?: 'day' | 'week' | 'month';
+  }) => {
+    const response = await api.get('/api/activity-reports/trends', { params });
+    return response.data;
+  },
+
+  // Detect activity anomalies
+  getAnomalies: async (params?: {
+    days?: number;
+    threshold?: number;
+  }) => {
+    const response = await api.get('/api/activity-reports/anomalies', { params });
+    return response.data;
+  },
+
+  // Compare activity between employees or departments
+  getComparison: async (params: {
+    type: 'employees' | 'departments';
+    days?: number;
+    ids?: string; // comma-separated employee IDs
+    departments?: string; // comma-separated department names
+  }) => {
+    const response = await api.get('/api/activity-reports/comparison', { params });
+    return response.data;
+  }
+};
+
 // Export the configured axios instance
 export default api; 

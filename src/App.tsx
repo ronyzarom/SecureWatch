@@ -18,6 +18,7 @@ import { SettingsCompanyPage } from './pages/SettingsCompanyPage';
 import { PoliciesPage } from './pages/PoliciesPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { ViolationsPage } from './pages/ViolationsPage';
+import { ActivityReportsPage } from './pages/ActivityReportsPage';
 // Mock data imports removed - now using real API data
 import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';
@@ -237,6 +238,8 @@ function App() {
         return <CategoriesPage />;
       case 'violations':
         return <ViolationsPage />;
+      case 'activity-reports':
+        return <ActivityReportsPage />;
       case 'settings-email':
         return <SettingsEmailPage />;
       case 'settings-company':
@@ -506,6 +509,8 @@ function App() {
             
             <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
               <ErrorBoundary>
+                {currentPage === 'violations' && <ViolationsPage />}
+                {currentPage === 'activity-reports' && <ActivityReportsPage />}
                 {renderPage()}
               </ErrorBoundary>
             </main>

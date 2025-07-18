@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { query } = require('../utils/database');
 const { requireAuth, rateLimit } = require('../middleware/auth');
+const { generateToken } = require('../middleware/jwt-auth');
 
 const router = express.Router();
 
@@ -323,6 +324,130 @@ router.get('/me', requireAuth, (req, res) => {
       department: req.user.department
     }
   });
+});
+
+/**
+ * @swagger
+ * /api/auth/jwt-token:
+ *   post:
+ *     summary: Generate JWT token
+ *     description: Authenticate user and return JWT token for API access
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: admin@company.com
+ *               password:
+ *                 type: string
+ *                 example: admin123
+ *     responses:
+ *       200:
+ *         description: JWT token generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     email:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     role:
+ *                       type: string
+ *                 expiresIn:
+ *                   type: string
+ *                   example: 24h
+ */
+router.post('/jwt-token', authRateLimit, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    console.log('🔍 JWT token request for:', email);
+
+    // Input validation
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'Email and password are required',
+        code: 'MISSING_CREDENTIALS'
+      });
+    }
+
+    // Find user by email
+    const result = await query(
+      'SELECT id, email, name, role, department, password_hash, is_active FROM users WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        code: 'INVALID_CREDENTIALS'
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Check if account is active
+    if (!user.is_active) {
+      return res.status(401).json({
+        error: 'Account has been deactivated',
+        code: 'ACCOUNT_INACTIVE'
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password_hash);
+    
+    if (!isValidPassword) {
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        code: 'INVALID_CREDENTIALS'
+      });
+    }
+
+    // Generate JWT token
+    const token = generateToken(user);
+
+    // Update last login timestamp
+    await query(
+      'UPDATE users SET last_login = NOW() WHERE id = $1',
+      [user.id]
+    );
+
+    console.log('✅ JWT token generated for:', user.email);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        department: user.department
+      },
+      expiresIn: '24h'
+    });
+
+  } catch (error) {
+    console.error('JWT token generation error:', error);
+    res.status(500).json({
+      error: 'Failed to generate JWT token',
+      code: 'JWT_GENERATION_ERROR'
+    });
+  }
 });
 
 // Check session status

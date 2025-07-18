@@ -2,16 +2,39 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 // Database connection configuration
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'securewatch',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // How long a client is allowed to remain idle
-  connectionTimeoutMillis: 2000, // How long to wait for a connection
-};
+let dbConfig;
+
+if (process.env.DATABASE_URL) {
+  // Use DATABASE_URL if provided (common in Render, Heroku, etc.)
+  console.log('🔗 Using DATABASE_URL for database connection');
+  dbConfig = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    max: 20, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000, // How long a client is allowed to remain idle
+    connectionTimeoutMillis: 2000, // How long to wait for a connection
+  };
+} else {
+  // Use individual environment variables
+  console.log('🔧 Using individual DB environment variables');
+  dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 5432,
+    database: process.env.DB_NAME || 'securewatch',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    max: 20, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000, // How long a client is allowed to remain idle
+    connectionTimeoutMillis: 2000, // How long to wait for a connection
+  };
+}
+
+console.log('📊 Database configuration:', {
+  type: process.env.DATABASE_URL ? 'DATABASE_URL' : 'Individual variables',
+  host: dbConfig.host || 'from DATABASE_URL',
+  database: dbConfig.database || 'from DATABASE_URL',
+  ssl: dbConfig.ssl ? 'enabled' : 'disabled'
+});
 
 // Create connection pool
 const pool = new Pool(dbConfig);

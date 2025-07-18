@@ -66,7 +66,21 @@ show_db_info() {
     echo -e "${PURPLE}🗄️  Database Configuration${NC}"
     echo "=================================================="
     
-    if [ -f "backend/.env" ]; then
+    # Check if DATABASE_URL is set (common in Render/Heroku)
+    if [ -n "$DATABASE_URL" ]; then
+        echo -e "${GREEN}✅ Using DATABASE_URL from environment${NC}"
+        echo -e "${CYAN}🔗 Connection:${NC} ${DATABASE_URL:0:30}..." # Show first 30 chars
+        
+        # Test database connection using DATABASE_URL
+        echo -e "${YELLOW}🔍 Testing database connection...${NC}"
+        if psql "$DATABASE_URL" -c "SELECT 1;" >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Database connection successful${NC}"
+        else
+            echo -e "${RED}❌ Database connection failed${NC}"
+            echo -e "${YELLOW}⚠️  Check DATABASE_URL and ensure database is accessible${NC}"
+        fi
+        
+    elif [ -f "backend/.env" ]; then
         echo -e "${CYAN}📁 Configuration file:${NC} backend/.env"
         
         # Read database configuration from .env file
@@ -88,11 +102,86 @@ show_db_info() {
             echo -e "${RED}❌ Database connection failed${NC}"
             echo -e "${YELLOW}⚠️  Make sure PostgreSQL is running and credentials are correct${NC}"
         fi
+        
+    elif [ -n "$DB_HOST" ] && [ -n "$DB_NAME" ] && [ -n "$DB_USER" ]; then
+        echo -e "${GREEN}✅ Using individual DB environment variables${NC}"
+        echo -e "${CYAN}🌐 Host:${NC} ${DB_HOST:-localhost}"
+        echo -e "${CYAN}🔌 Port:${NC} ${DB_PORT:-5432}"
+        echo -e "${CYAN}📊 Database:${NC} ${DB_NAME:-securewatch}"
+        echo -e "${CYAN}👤 User:${NC} ${DB_USER:-postgres}"
+        
+        # Test database connection
+        echo -e "${YELLOW}🔍 Testing database connection...${NC}"
+        if PGPASSWORD="$DB_PASSWORD" psql -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-postgres}" -d "${DB_NAME:-securewatch}" -c "SELECT 1;" >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Database connection successful${NC}"
+        else
+            echo -e "${RED}❌ Database connection failed${NC}"
+            echo -e "${YELLOW}⚠️  Check database environment variables and ensure database is accessible${NC}"
+        fi
+        
     else
-        echo -e "${RED}❌ Backend .env file not found${NC}"
-        echo -e "${YELLOW}💡 Run: cp backend/.env.example backend/.env${NC}"
+        echo -e "${RED}❌ No database configuration found${NC}"
+        echo -e "${YELLOW}💡 Options:${NC}"
+        echo -e "${YELLOW}   1. Set DATABASE_URL environment variable (Render/Heroku)${NC}"
+        echo -e "${YELLOW}   2. Set individual DB_* environment variables${NC}"
+        echo -e "${YELLOW}   3. Create backend/.env file from backend/.env.example${NC}"
     fi
     echo ""
+}
+
+# Function to validate environment variables
+validate_environment() {
+    echo -e "${PURPLE}🔧 Environment Validation${NC}"
+    echo "=================================================="
+    
+    local missing_vars=()
+    local warnings=()
+    
+    # Check database configuration
+    if [ -z "$DATABASE_URL" ] && [ -z "$DB_HOST" ] && [ ! -f "backend/.env" ]; then
+        missing_vars+=("Database configuration (DATABASE_URL or DB_* vars or backend/.env)")
+    fi
+    
+    # Check security variables
+    if [ -z "$SESSION_SECRET" ]; then
+        warnings+=("SESSION_SECRET not set - using default (insecure)")
+    fi
+    
+    if [ -z "$JWT_SECRET" ]; then
+        warnings+=("JWT_SECRET not set - using default (insecure)")
+    fi
+    
+    # Check AI configuration
+    if [ -z "$OPENAI_API_KEY" ] || [ "$OPENAI_API_KEY" = "your_openai_api_key_here" ]; then
+        warnings+=("OPENAI_API_KEY not set - AI features will be disabled")
+    fi
+    
+    # Check production settings
+    if [ "$NODE_ENV" = "production" ]; then
+        if [ -z "$FRONTEND_URL" ]; then
+            warnings+=("FRONTEND_URL not set for production - CORS may fail")
+        fi
+    fi
+    
+    # Display results
+    if [ ${#missing_vars[@]} -eq 0 ]; then
+        echo -e "${GREEN}✅ All required environment variables are configured${NC}"
+    else
+        echo -e "${RED}❌ Missing required environment variables:${NC}"
+        for var in "${missing_vars[@]}"; do
+            echo -e "${RED}   • $var${NC}"
+        done
+    fi
+    
+    if [ ${#warnings[@]} -gt 0 ]; then
+        echo -e "${YELLOW}⚠️  Warnings:${NC}"
+        for warning in "${warnings[@]}"; do
+            echo -e "${YELLOW}   • $warning${NC}"
+        done
+    fi
+    
+    echo ""
+    return ${#missing_vars[@]}
 }
 
 # Function to show port status
@@ -259,8 +348,15 @@ show_final_status() {
 
 # Main execution
 show_system_info
+validate_environment
 show_db_info
 show_port_status
+
+# Exit if critical environment variables are missing
+if ! validate_environment >/dev/null 2>&1; then
+    echo -e "${RED}❌ Critical environment variables missing. Please configure them before starting.${NC}"
+    exit 1
+fi
 
 # Check if ports are already in use
 if check_port 3001; then

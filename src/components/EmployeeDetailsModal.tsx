@@ -6,6 +6,8 @@ import { LoadingSpinner, InlineLoading } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
 import { AppError, ErrorType, createError, withErrorHandling, logError } from '../utils/errorUtils';
 import { EmailViewModal } from './EmailViewModal';
+import { ViolationStatusManager } from './ViolationStatusManager';
+import { violationAPI } from '../services/api';
 
 interface EmployeeDetailsModalProps {
   employee: Employee;
@@ -399,13 +401,17 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                               )}
                             </div>
                             
-                            <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              violation.status === 'Active' ? 'bg-red-200 dark:bg-red-800/50 text-red-800 dark:text-red-200' :
-                              violation.status === 'Investigating' ? 'bg-yellow-200 dark:bg-yellow-800/50 text-yellow-800 dark:text-yellow-200' :
-                              'bg-green-200 dark:bg-green-800/50 text-green-800 dark:text-green-200'
-                            }`}>
-                              {violation.status}
-                            </div>
+                            <ViolationStatusManager
+                              violation={violation}
+                              onStatusChange={(newStatus) => {
+                                // This function will be implemented in ViolationStatusManager
+                                console.log('Status changed to:', newStatus);
+                              }}
+                              onAIDecision={(decision) => {
+                                // This function will be implemented in ViolationStatusManager
+                                console.log('AI decision:', decision);
+                              }}
+                            />
                           </div>
                         </div>
                       </div>

@@ -11,7 +11,8 @@ import {
   Building,
   UserCheck,
   FileText,
-  Database
+  Database,
+  AlertTriangle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -68,6 +69,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Categories',
       icon: Database,
       page: 'categories'
+    },
+    {
+      id: 'violations',
+      label: 'Violations',
+      icon: AlertTriangle,
+      page: 'violations'
     },
     {
       id: 'settings',

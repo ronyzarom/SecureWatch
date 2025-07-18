@@ -17,6 +17,7 @@ import { SettingsEmailPage } from './pages/SettingsEmailPage';
 import { SettingsCompanyPage } from './pages/SettingsCompanyPage';
 import { PoliciesPage } from './pages/PoliciesPage';
 import { CategoriesPage } from './pages/CategoriesPage';
+import { ViolationsPage } from './pages/ViolationsPage';
 // Mock data imports removed - now using real API data
 import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';
@@ -143,7 +144,7 @@ function App() {
     } catch (error) {
       console.error('❌ Failed to fetch dashboard data:', error);
       setError('Failed to load dashboard data');
-      logError(error as Error, { component: 'App', action: 'fetchDashboardData' });
+      logError(error as Error, 'App.fetchDashboardData');
     } finally {
       setLoading(false);
     }
@@ -170,7 +171,7 @@ function App() {
     try {
       console.log('🔄 Fetching detailed employee data for:', employee.name);
       
-      const response = await employeeAPI.getById(employee.id);
+      const response = await employeeAPI.getById(Number(employee.id));
       console.log('✅ Employee details:', response);
       
       // Create detailed employee object with all data
@@ -194,7 +195,7 @@ function App() {
     } catch (error) {
       console.error('❌ Failed to fetch employee details:', error);
       setError('Failed to load employee details');
-      logError(error as Error, { component: 'App', action: 'fetchEmployeeDetails', employeeId: employee.id });
+      logError(error as Error, `App.fetchEmployeeDetails.${employee.id}`);
       
       // Fallback: show basic employee data
       setSelectedEmployee(employee);
@@ -234,6 +235,8 @@ function App() {
         return <PoliciesPage />;
       case 'categories':
         return <CategoriesPage />;
+      case 'violations':
+        return <ViolationsPage />;
       case 'settings-email':
         return <SettingsEmailPage />;
       case 'settings-company':

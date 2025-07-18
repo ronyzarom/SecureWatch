@@ -225,6 +225,52 @@ export const chatAPI = {
 };
 
 // ============================================================
+// VIOLATIONS MANAGEMENT 
+// ============================================================
+
+export const violationAPI = {
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    severity?: string;
+    employeeId?: number;
+    sortBy?: string;
+    sortOrder?: string;
+  }) => {
+    const response = await api.get('/api/violations', { params });
+    return response.data;
+  },
+
+  getById: async (id: number) => {
+    const response = await api.get(`/api/violations/${id}`);
+    return response.data;
+  },
+
+  updateStatus: async (id: number, status: string, reason: string, aiAssisted = false) => {
+    const response = await api.put(`/api/violations/${id}/status`, {
+      status,
+      reason,
+      aiAssisted
+    });
+    return response.data;
+  },
+
+  requestAIValidation: async (id: number, validationType = 'evidence_validation', additionalContext?: string) => {
+    const response = await api.post(`/api/violations/${id}/ai-validate`, {
+      validationType,
+      additionalContext
+    });
+    return response.data;
+  },
+
+  getStatistics: async () => {
+    const response = await api.get('/api/violations/stats');
+    return response.data;
+  }
+};
+
+// ============================================================
 // USERS MANAGEMENT
 // ============================================================
 

@@ -20,6 +20,7 @@ const policiesRoutes = require('./src/routes/policies');
 const integrationsRoutes = require('./src/routes/integrations');
 const adminRoutes = require('./src/routes/admin');
 const categoriesRoutes = require('./src/routes/categories');
+const violationsRoutes = require('./src/routes/violations');
 
 // Import services
 const policyActionExecutor = require('./src/services/policyActionExecutor');
@@ -116,6 +117,7 @@ app.use('/api/policies', policiesRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/categories', categoriesRoutes);
+app.use('/api/violations', violationsRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

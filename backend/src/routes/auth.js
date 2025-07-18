@@ -77,6 +77,74 @@ const authRateLimit = rateLimit(5, 15 * 60 * 1000); // 5 requests per 15 minutes
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+// Simple login form for testing (add this before the POST login route)
+router.get('/login', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>SecureWatch Login</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 400px; margin: 100px auto; padding: 20px; }
+            .form-group { margin-bottom: 15px; }
+            label { display: block; margin-bottom: 5px; font-weight: bold; }
+            input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+            button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+            button:hover { background: #0056b3; }
+            .error { color: red; margin-top: 10px; }
+            .success { color: green; margin-top: 10px; }
+        </style>
+    </head>
+    <body>
+        <h2>SecureWatch Admin Login</h2>
+        <form id="loginForm">
+            <div class="form-group">
+                <label>Email:</label>
+                <input type="email" id="email" value="admin@company.com" required>
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input type="password" id="password" value="admin123" required>
+            </div>
+            <button type="submit">Login</button>
+        </form>
+        <div id="message"></div>
+
+        <script>
+            document.getElementById('loginForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                const messageDiv = document.getElementById('message');
+
+                try {
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ email, password })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        messageDiv.innerHTML = '<div class="success">✅ Login successful! You can now close this tab and return to the app.</div>';
+                        setTimeout(() => {
+                            window.close();
+                        }, 2000);
+                    } else {
+                        messageDiv.innerHTML = '<div class="error">❌ ' + data.error + '</div>';
+                    }
+                } catch (error) {
+                    messageDiv.innerHTML = '<div class="error">❌ Network error: ' + error.message + '</div>';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `);
+});
+
 // Login endpoint
 router.post('/login', authRateLimit, async (req, res) => {
   try {

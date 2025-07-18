@@ -1,578 +1,416 @@
 import React, { useState, useEffect } from 'react';
-import { Plug, CheckCircle, XCircle, AlertTriangle, Settings, Plus, RefreshCw as Refresh, ExternalLink } from 'lucide-react';
-import { Integration } from '../types';
+import { Building2, RefreshCw, Settings, AlertTriangle, CheckCircle, XCircle, Mail, MessageSquare, Zap } from 'lucide-react';
+import { LoadingSpinner } from '../components/LoadingSpinner';
 import { Office365Config } from '../components/Office365Config';
-import { LoginPrompt } from '../components/LoginPrompt';
+import { TeamsConfig } from '../components/TeamsConfig';
+import { GoogleWorkspaceConfig } from '../components/GoogleWorkspaceConfig';
 import api from '../services/api';
 
 interface IntegrationStatus {
-  name: string;
-  description: string;
-  icon: string;
-  status: 'connected' | 'disconnected' | 'error' | 'disabled' | 'not_configured';
-  lastSync?: string;
   isConfigured: boolean;
-  isActive?: boolean;
-  config?: Record<string, any>;
+  isActive: boolean;
+  status: string;
+}
+
+interface IntegrationsData {
+  office365?: IntegrationStatus;
+  teams?: IntegrationStatus;
+  google_workspace?: IntegrationStatus;
 }
 
 export const IntegrationsPage: React.FC = () => {
-  const [office365Status, setOffice365Status] = useState<IntegrationStatus>({
-    name: 'Microsoft Office 365',
-    description: 'Connect to Office 365 for email monitoring and user activity analysis',
-    icon: '📧',
-    status: 'disconnected',
-    isConfigured: false
-  });
-  
-  const [otherIntegrations] = useState<IntegrationStatus[]>([
-    {
-      name: 'Google Workspace',
-      description: 'Monitor Gmail and Google Drive activities for security threats',
-      icon: '🔍',
-      status: 'disconnected',
-      isConfigured: false
-    },
-    {
-      name: 'Slack',
-      description: 'Analyze Slack communications for policy violations and data leaks',
-      icon: '💬',
-      status: 'disconnected',
-      isConfigured: false
-    },
-    {
-      name: 'Microsoft Teams',
-      description: 'Monitor Teams messages and file sharing activities',
-      icon: '👥',
-      status: 'disconnected',
-      isConfigured: false
-    },
-    {
-      name: 'Salesforce',
-      description: 'Track CRM data access and customer information security',
-      icon: '☁️',
-      status: 'disconnected',
-      isConfigured: false
-    },
-    {
-      name: 'Box',
-      description: 'Monitor file sharing and collaboration activities',
-      icon: '📦',
-      status: 'disconnected',
-      isConfigured: false
-    }
-  ]);
-
-  const [selectedIntegration, setSelectedIntegration] = useState<IntegrationStatus | null>(null);
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [integrations, setIntegrations] = useState<IntegrationsData>({});
+  const [showOffice365Config, setShowOffice365Config] = useState(false);
+  const [showTeamsConfig, setShowTeamsConfig] = useState(false);
+  const [showGoogleWorkspaceConfig, setShowGoogleWorkspaceConfig] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    checkAuthAndLoadStatus();
+    loadIntegrations();
   }, []);
 
-  const checkAuthAndLoadStatus = async () => {
+  const loadIntegrations = async () => {
     try {
-      // First, check basic integration status (no auth required)
-      await loadIntegrationStatus();
-      
-      // Then check authentication
-      const authResponse = await api.get('/api/auth/status');
-      setIsAuthenticated(authResponse.data.authenticated);
-      
-      if (authResponse.data.authenticated) {
-        // Only load detailed config if user is admin and Office 365 is configured
-        if (authResponse.data.user?.role === 'admin' && office365Status.isConfigured) {
-          setTimeout(async () => {
-            await loadOffice365Config();
-          }, 100);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to check authentication and status:', error);
-      setOffice365Status(prev => ({
-        ...prev,
-        status: 'error',
-        isConfigured: false,
-        isActive: false
-      }));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadIntegrationStatus = async () => {
-    try {
+      setRefreshing(true);
       const response = await api.get('/api/integrations/status');
-      const statusData = response.data;
-      
-      if (statusData.office365) {
-        setOffice365Status(prev => ({
-          ...prev,
-          isConfigured: statusData.office365.isConfigured,
-          isActive: statusData.office365.isActive,
-          status: statusData.office365.status
-        }));
-      }
+      setIntegrations(response.data);
     } catch (error) {
-      console.error('Failed to load integration status:', error);
-      // Set safe defaults
-      setOffice365Status(prev => ({
-        ...prev,
-        status: 'not_configured',
-        isConfigured: false,
-        isActive: false
-      }));
+      console.error('Failed to load integrations:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const loadOffice365Config = async () => {
-    try {
-      // This function loads detailed configuration data for admin users
-      const configResponse = await api.get('/api/integrations/office365/config');
-      const configData = configResponse.data;
-      
-      setOffice365Status(prev => ({
-        ...prev,
-        config: configData,
-        // Update status from detailed config if available
-        isConfigured: configData?.isConfigured || prev.isConfigured,
-        isActive: configData?.isActive || prev.isActive,
-        status: configData?.status || prev.status
-      }));
-
-      // Only load sync status if Office 365 is configured AND active
-      if (configData?.isConfigured && configData?.isActive) {
-        await loadOffice365SyncStatus();
-      }
-    } catch (error) {
-      console.error('Failed to load Office 365 detailed config:', error);
-      // Don't overwrite basic status on error, just log it
-    }
+  const handleRefresh = () => {
+    loadIntegrations();
   };
 
-  const loadOffice365SyncStatus = async () => {
-    try {
-      const syncResponse = await api.get('/api/integrations/office365/sync/status');
-      const syncData = syncResponse.data;
-      
-      setOffice365Status(prev => ({
-        ...prev,
-        status: syncData?.status === 'error' ? 'error' : 'connected',
-        lastSync: syncData?.lastSync
-      }));
-    } catch (error) {
-      console.error('Failed to load sync status:', error);
-      // Don't change status on sync error - keep as configured
-    }
-  };
-
-  const handleConnect = (integration: IntegrationStatus) => {
-    if (integration.name === 'Microsoft Office 365') {
-      setSelectedIntegration(integration);
-      setShowConfigModal(true);
-    }
-  };
-
-  const handleCloseConfigModal = async () => {
-    setShowConfigModal(false);
-    setSelectedIntegration(null);
-    
-    // Refresh integration status after configuration changes
-    await loadIntegrationStatus();
-    
-    // If user is admin and Office 365 is now configured, load detailed config
-    if (isAuthenticated && office365Status.isConfigured) {
-      await loadOffice365Config();
-    }
-  };
-
-  const handleToggleIntegration = async (integrationName: string) => {
-    if (integrationName === 'Microsoft Office 365') {
-      if (!office365Status.isConfigured) {
-        console.log('Cannot toggle - Office 365 not configured');
-        return;
-      }
-
-      try {
-        const newActiveState = !office365Status.isActive;
-        const response = await api.post('/api/integrations/office365/toggle', {
-          isActive: newActiveState
-        });
-        
-        // Update status immediately
-        setOffice365Status(prev => ({
-          ...prev,
-          isActive: newActiveState,
-          status: response.data.status
-        }));
-
-        console.log(`Office 365 ${newActiveState ? 'enabled' : 'disabled'} successfully`);
-        
-        // Refresh status to ensure consistency
-        await loadIntegrationStatus();
-      } catch (error) {
-        console.error('Failed to toggle Office 365:', error);
-      }
-    }
-  };
-
-  const getAllIntegrations = () => [office365Status, ...otherIntegrations];
-
-  const getStatusIcon = (status: IntegrationStatus['status']) => {
-    switch (status) {
-      case 'connected':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'disabled':
-        return <XCircle className="w-5 h-5 text-orange-500" />;
-      case 'error':
-        return <AlertTriangle className="w-5 h-5 text-red-500" />;
-      default:
-        return <XCircle className="w-5 h-5 text-gray-400" />;
-    }
-  };
-
-  const getStatusText = (status: IntegrationStatus['status']) => {
-    switch (status) {
-      case 'connected':
-        return 'Enabled';
-      case 'disabled':
-        return 'Disabled';
-      case 'error':
-        return 'Error';
-      default:
-        return 'Not Configured';
-    }
-  };
-
-  const getStatusColor = (status: IntegrationStatus['status']) => {
-    switch (status) {
-      case 'connected':
-        return 'text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800';
-      case 'disabled':
-        return 'text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-900/20 dark:border-orange-800';
-      case 'error':
-        return 'text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800';
-      default:
-        return 'text-gray-600 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-700 dark:border-gray-600';
-    }
-  };
-
-  const handleSync = async (integrationName: string) => {
-    if (integrationName === 'Microsoft Office 365') {
-      // Only allow sync if Office 365 is configured AND active
-      if (!office365Status.isConfigured) {
-        console.log('Cannot sync - Office 365 not configured');
-        return;
-      }
-      
-      if (!office365Status.isActive) {
-        console.log('Cannot sync - Office 365 is disabled');
-        return;
-      }
-
-      try {
-        const response = await api.post('/api/integrations/office365/sync');
-        
-        // Refresh status after a short delay
-        setTimeout(() => {
-          loadOffice365SyncStatus(); // Only reload sync status, not full config
-        }, 1000);
-      } catch (error) {
-        console.error('Failed to sync Office 365:', error);
-      }
-    }
-  };
-
-  const formatLastSync = (timestamp?: string) => {
-    if (!timestamp) return 'Never';
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    
-    if (diffMins < 60) return `${diffMins} minutes ago`;
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)} hours ago`;
-    return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString();
-  };
-
-  const allIntegrations = getAllIntegrations();
-
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
-        <div className="flex items-center justify-center h-64">
-          <Refresh className="w-8 h-8 text-blue-500 animate-spin" />
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Integrations</h1>
-            <p className="text-gray-600 dark:text-gray-300">Connect external systems to enhance security monitoring</p>
-          </div>
-          <button 
-            onClick={() => {
-              if (isAuthenticated) {
-                setSelectedIntegration(office365Status); // Set the Office 365 integration
-                setShowConfigModal(true); // Show config modal for new setup
-              } else {
-                setShowLoginPrompt(true);
-              }
-            }}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Setup Integration</span>
-          </button>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Integrations</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Connect external services to monitor communications and detect security threats
+          </p>
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <span>Refresh</span>
+        </button>
       </div>
 
-      {/* Integration Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {allIntegrations.map((integration, index) => (
-          <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow">
+      {/* Integration Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
+        {/* Office 365 Integration */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-xl transition-shadow">
+          <div className="p-6">
             <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="text-3xl">{integration.icon}</div>
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
+                  <Building2 className="w-6 h-6 text-white" />
+                </div>
                 <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{integration.name}</h3>
-                  <div className={`flex items-center space-x-2 mt-1 px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(integration.status)}`}>
-                    {getStatusIcon(integration.status)}
-                    <span>{getStatusText(integration.status)}</span>
-                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Office 365</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Email monitoring and analysis</p>
                 </div>
               </div>
-              <button 
-                onClick={() => handleConnect(integration)}
-                className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 leading-relaxed">{integration.description}</p>
-
-            <div className="space-y-3">
-              {integration.status === 'connected' && integration.lastSync && (
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  <p>Last sync: {formatLastSync(integration.lastSync)}</p>
-                </div>
-              )}
-
-              <div className="flex space-x-2">
-                {integration.status === 'connected' ? (
+              <div className="flex items-center space-x-2">
+                {integrations.office365 ? (
                   <>
-                    <button 
-                      onClick={() => handleSync(integration.name)}
-                      disabled={!integration.isConfigured || !integration.isActive}
-                      className="flex items-center space-x-1 px-3 py-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Refresh className="w-4 h-4" />
-                      <span>Sync</span>
-                    </button>
-                    <button 
-                      onClick={() => handleConnect(integration)}
-                      className="flex items-center space-x-1 px-3 py-2 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors text-sm"
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span>Configure</span>
-                    </button>
-                    {integration.isConfigured && (
-                      <button 
-                        onClick={() => handleToggleIntegration(integration.name)}
-                        className="flex items-center space-x-1 px-3 py-2 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors text-sm"
-                      >
-                        <XCircle className="w-4 h-4" />
-                        <span>Disable</span>
-                      </button>
+                    {integrations.office365.status === 'connected' && (
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                    )}
+                    {integrations.office365.status === 'disabled' && (
+                      <XCircle className="w-5 h-5 text-yellow-500" />
+                    )}
+                    {integrations.office365.status === 'not_configured' && (
+                      <AlertTriangle className="w-5 h-5 text-red-500" />
                     )}
                   </>
-                ) : integration.status === 'disabled' ? (
-                  <>
-                    <button 
-                      onClick={() => handleToggleIntegration(integration.name)}
-                      className="flex items-center space-x-1 px-3 py-2 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>Enable</span>
-                    </button>
-                    <button 
-                      onClick={() => handleConnect(integration)}
-                      className="flex items-center space-x-1 px-3 py-2 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors text-sm"
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span>Configure</span>
-                    </button>
-                  </>
-                ) : integration.isConfigured ? (
-                  <>
-                    <button 
-                      onClick={() => handleConnect(integration)}
-                      className="flex items-center space-x-1 px-3 py-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm"
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span>Reconfigure</span>
-                    </button>
-                    <button 
-                      onClick={() => handleSync(integration.name)}
-                      disabled={!integration.isConfigured || !integration.isActive}
-                      className="flex items-center space-x-1 px-3 py-2 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Refresh className="w-4 h-4" />
-                      <span>Retry</span>
-                    </button>
-                  </>
                 ) : (
-                  <button 
-                    onClick={() => handleConnect(integration)}
-                    className="flex items-center space-x-1 px-3 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-sm"
-                  >
-                    <Plug className="w-4 h-4" />
-                    <span>Configure</span>
-                  </button>
+                  <XCircle className="w-5 h-5 text-gray-400" />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                <span className={`text-sm font-medium ${
+                  integrations.office365?.status === 'connected' 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : integrations.office365?.status === 'disabled'
+                    ? 'text-yellow-600 dark:text-yellow-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.office365?.status === 'connected' && 'Connected & Active'}
+                  {integrations.office365?.status === 'disabled' && 'Configured but Disabled'}
+                  {integrations.office365?.status === 'not_configured' && 'Not Configured'}
+                  {!integrations.office365 && 'Not Available'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Configuration</span>
+                <span className={`text-sm font-medium ${
+                  integrations.office365?.isConfigured 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.office365?.isConfigured ? 'Complete' : 'Incomplete'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Active</span>
+                <span className={`text-sm font-medium ${
+                  integrations.office365?.isActive 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}>
+                  {integrations.office365?.isActive ? 'Yes' : 'No'}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <p>• Monitor email communications</p>
+                <p>• Detect policy violations</p>
+                <p>• Track user activities</p>
+                <p>• AI-powered risk analysis</p>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowOffice365Config(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Configure</span>
+                </button>
+                
+                {integrations.office365?.status === 'connected' && (
+                  <div className="flex items-center space-x-1 text-green-600 dark:text-green-400 text-sm">
+                    <Zap className="w-4 h-4" />
+                    <span>Active</span>
+                  </div>
                 )}
               </div>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Integration Stats */}
-      <div className="mt-12 grid grid-cols-1 md:grid-cols-5 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Enabled</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {allIntegrations.filter(i => i.status === 'connected').length}
-              </p>
-            </div>
-          </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
-              <XCircle className="w-6 h-6 text-orange-600 dark:text-orange-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Disabled</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {allIntegrations.filter(i => i.status === 'disabled').length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Errors</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {allIntegrations.filter(i => i.status === 'error').length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center">
-              <Settings className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Available</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {allIntegrations.filter(i => i.status === 'disconnected' || i.status === 'not_configured').length}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-              <Plug className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Total</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{allIntegrations.length}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Login Prompt */}
-      {showLoginPrompt && (
-        <LoginPrompt
-          onLoginSuccess={() => {
-            setShowLoginPrompt(false);
-            setIsAuthenticated(true);
-            loadOffice365Config(); // Refresh config after login
-          }}
-          onClose={() => setShowLoginPrompt(false)}
-        />
-      )}
-
-      {/* Office 365 Configuration Modal */}
-      {showConfigModal && selectedIntegration?.name === 'Microsoft Office 365' && isAuthenticated && (
-        <Office365Config 
-          onClose={handleCloseConfigModal}
-          isAuthenticated={isAuthenticated}
-        />
-      )}
-
-      {/* Generic Integration Modal for other integrations */}
-      {selectedIntegration && selectedIntegration.name !== 'Microsoft Office 365' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-black dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Configure {selectedIntegration.name}</h3>
-              <button 
-                onClick={() => setSelectedIntegration(null)}
-                className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-2xl"
-              >
-                ×
-              </button>
-            </div>
-            <div className="text-center py-8">
-              <Settings className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 dark:text-gray-300 mb-4">
-                {selectedIntegration.name} integration is coming soon.
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                This integration is not yet available. Please check back later or contact support for more information.
-              </p>
-              <div className="flex items-center justify-center space-x-2 text-sm text-blue-600 dark:text-blue-400">
-                <ExternalLink className="w-4 h-4" />
-                <span>View integration roadmap</span>
+        {/* Microsoft Teams Integration */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-xl transition-shadow">
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-600 rounded-xl flex items-center justify-center">
+                  <MessageSquare className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Microsoft Teams</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Teams chat and file monitoring</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {integrations.teams ? (
+                  <>
+                    {integrations.teams.status === 'connected' && (
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                    )}
+                    {integrations.teams.status === 'disabled' && (
+                      <XCircle className="w-5 h-5 text-yellow-500" />
+                    )}
+                    {integrations.teams.status === 'not_configured' && (
+                      <AlertTriangle className="w-5 h-5 text-red-500" />
+                    )}
+                  </>
+                ) : (
+                  <XCircle className="w-5 h-5 text-gray-400" />
+                )}
               </div>
             </div>
-            <div className="flex space-x-3 mt-6">
-              <button 
-                onClick={() => setSelectedIntegration(null)}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Close
-              </button>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                <span className={`text-sm font-medium ${
+                  integrations.teams?.status === 'connected' 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : integrations.teams?.status === 'disabled'
+                    ? 'text-yellow-600 dark:text-yellow-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.teams?.status === 'connected' && 'Connected & Active'}
+                  {integrations.teams?.status === 'disabled' && 'Configured but Disabled'}
+                  {integrations.teams?.status === 'not_configured' && 'Not Configured'}
+                  {!integrations.teams && 'Not Available'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Configuration</span>
+                <span className={`text-sm font-medium ${
+                  integrations.teams?.isConfigured 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.teams?.isConfigured ? 'Complete' : 'Incomplete'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Active</span>
+                <span className={`text-sm font-medium ${
+                  integrations.teams?.isActive 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}>
+                  {integrations.teams?.isActive ? 'Yes' : 'No'}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <p>• Monitor Teams conversations</p>
+                <p>• Track file sharing activities</p>
+                <p>• Detect inappropriate content</p>
+                <p>• Requires Office 365 first</p>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowTeamsConfig(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Configure</span>
+                </button>
+                
+                {integrations.teams?.status === 'connected' && (
+                  <div className="flex items-center space-x-1 text-green-600 dark:text-green-400 text-sm">
+                    <Zap className="w-4 h-4" />
+                    <span>Active</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Google Workspace Integration */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-xl transition-shadow">
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-green-500 rounded-xl flex items-center justify-center">
+                  <Mail className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Google Workspace</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Gmail and Google Drive monitoring</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {integrations.google_workspace ? (
+                  <>
+                    {integrations.google_workspace.status === 'connected' && (
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                    )}
+                    {integrations.google_workspace.status === 'disabled' && (
+                      <XCircle className="w-5 h-5 text-yellow-500" />
+                    )}
+                    {integrations.google_workspace.status === 'not_configured' && (
+                      <AlertTriangle className="w-5 h-5 text-red-500" />
+                    )}
+                  </>
+                ) : (
+                  <XCircle className="w-5 h-5 text-gray-400" />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                <span className={`text-sm font-medium ${
+                  integrations.google_workspace?.status === 'connected' 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : integrations.google_workspace?.status === 'disabled'
+                    ? 'text-yellow-600 dark:text-yellow-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.google_workspace?.status === 'connected' && 'Connected & Active'}
+                  {integrations.google_workspace?.status === 'disabled' && 'Configured but Disabled'}
+                  {integrations.google_workspace?.status === 'not_configured' && 'Not Configured'}
+                  {!integrations.google_workspace && 'Not Available'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Configuration</span>
+                <span className={`text-sm font-medium ${
+                  integrations.google_workspace?.isConfigured 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.google_workspace?.isConfigured ? 'Complete' : 'Incomplete'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Active</span>
+                <span className={`text-sm font-medium ${
+                  integrations.google_workspace?.isActive 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}>
+                  {integrations.google_workspace?.isActive ? 'Yes' : 'No'}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <p>• Monitor Gmail communications</p>
+                <p>• Analyze Google Drive file sharing</p>
+                <p>• Detect data exfiltration attempts</p>
+                <p>• AI-powered risk assessment</p>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowGoogleWorkspaceConfig(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Configure</span>
+                </button>
+                
+                {integrations.google_workspace?.status === 'connected' && (
+                  <div className="flex items-center space-x-1 text-green-600 dark:text-green-400 text-sm">
+                    <Zap className="w-4 h-4" />
+                    <span>Active</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Configuration Modals - Only render when needed */}
+      {showOffice365Config && (
+        <Office365Config
+          isOpen={showOffice365Config}
+          onClose={() => setShowOffice365Config(false)}
+          onSave={() => {
+            setShowOffice365Config(false);
+            loadIntegrations();
+          }}
+        />
+      )}
+
+      {showTeamsConfig && (
+        <TeamsConfig
+          isOpen={showTeamsConfig}
+          onClose={() => setShowTeamsConfig(false)}
+          onSave={() => {
+            setShowTeamsConfig(false);
+            loadIntegrations();
+          }}
+        />
+      )}
+
+      {showGoogleWorkspaceConfig && (
+        <GoogleWorkspaceConfig
+          isOpen={showGoogleWorkspaceConfig}
+          onClose={() => setShowGoogleWorkspaceConfig(false)}
+          onSave={() => {
+            setShowGoogleWorkspaceConfig(false);
+            loadIntegrations();
+          }}
+        />
       )}
     </div>
   );
-};
+}; 

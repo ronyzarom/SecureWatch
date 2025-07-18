@@ -23,6 +23,7 @@ const settingsRoutes = require('./src/routes/settings');
 const integrationsRoutes = require('./src/routes/integrations');
 const categoriesRoutes = require('./src/routes/categories');
 const mfaRoutes = require('./src/routes/mfa');
+const notificationRoutes = require('./src/routes/notifications');
 
 // Import services
 const policyActionExecutor = require('./src/services/policyActionExecutor');
@@ -109,19 +110,19 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/employees', employeeRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/emails', emailRoutes);
+app.use('/api/employees', employeeRoutes);
 app.use('/api/violations', violationRoutes);
-app.use('/api/activity-reports', activityReportsRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/admin', adminRoutes);
 app.use('/api/policies', policyRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/integrations', integrationsRoutes);
 app.use('/api/categories', categoriesRoutes);
+app.use('/api/emails', emailRoutes);
+app.use('/api/integrations', integrationsRoutes);
+app.use('/api/activity-reports', activityReportsRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/mfa', mfaRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/chat', chatRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

@@ -174,7 +174,53 @@ export interface CompanyDetails {
   phone: string;
   industry: string;
   employee_count: number;
-  logo_url?: string;
+  timezone: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Notification types
+export interface Notification {
+  id: string;
+  type: 'critical' | 'warning' | 'info' | 'success';
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  actionUrl?: string;
+  employeeId?: string;
+  violationId?: string;
+  priority: 'high' | 'medium' | 'low';
+  category: 'security' | 'system' | 'user' | 'policy';
+}
+
+export interface NotificationSettings {
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  criticalOnly: boolean;
+  categories: {
+    security: boolean;
+    system: boolean;
+    user: boolean;
+    policy: boolean;
+  };
+  quietHours: {
+    enabled: boolean;
+    startTime: string;
+    endTime: string;
+  };
+}
+
+export interface Toast {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  message?: string;
+  duration?: number;
+  action?: {
+    label: string;
+    handler: () => void;
+  };
 }
 
 export interface CompanyInfo {

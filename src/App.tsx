@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, AlertTriangle, Shield, TrendingUp } from 'lucide-react';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { MetricsCard } from './components/MetricsCard';
@@ -8,6 +9,7 @@ import { EmployeeCard } from './components/EmployeeCard';
 import { EmployeeDetailsModal } from './components/EmployeeDetailsModal';
 import { NetworkAnalysis } from './components/NetworkAnalysis';
 import { RecentActivity } from './components/RecentActivity';
+import { ToastContainer } from './components/ToastContainer';
 
 import { EmailAnalytics } from './components/EmailAnalytics';
 import { IntegrationsPage } from './pages/IntegrationsPage';
@@ -16,6 +18,7 @@ import { EmployeesPage } from './pages/EmployeesPage';
 import { SettingsEmailPage } from './pages/SettingsEmailPage';
 import { SettingsCompanyPage } from './pages/SettingsCompanyPage';
 import { UserSettingsPage } from './pages/UserSettingsPage';
+import { NotificationSettingsPage } from './pages/NotificationSettingsPage';
 import { PoliciesPage } from './pages/PoliciesPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { ViolationsPage } from './pages/ViolationsPage';
@@ -130,11 +133,12 @@ function App() {
       console.log('✅ Dashboard metrics:', metricsResponse);
       console.log('✅ Employees data:', employeesResponse);
       
-      // Debug: Check employee risk scores
+      // Use employee data directly from API (consistent structure)
       const employees = employeesResponse.employees || employeesResponse;
-      console.log('🔍 Employee risk scores:');
+      
+      console.log('🔍 Dashboard Employee data:');
       employees.forEach((emp: any) => {
-        console.log(`- ${emp.name}: ${emp.riskScore}% (${emp.riskLevel})`);
+        console.log(`- ${emp.name}: ${emp.riskScore}% (${emp.riskLevel}) | Dept: ${emp.department}`);
       });
       
       const highRiskCount = employees.filter((emp: any) => emp.riskScore >= 65).length;
@@ -247,6 +251,8 @@ function App() {
         return <SettingsCompanyPage />;
       case 'user-settings':
         return <UserSettingsPage user={user} />;
+      case 'notification-settings':
+        return <NotificationSettingsPage />;
       default:
         return (
           <>
@@ -340,6 +346,8 @@ function App() {
                         key={employee.id}
                         employee={employee}
                         onViewDetails={fetchEmployeeDetails}
+                        layout="list"
+                        showMetrics={true}
                       />
                     ))}
                   </div>
@@ -474,66 +482,69 @@ function App() {
   return (
     <ErrorBoundary onError={handleGlobalError}>
       <ThemeProvider>
-        <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
-          {/* Mobile sidebar overlay */}
-          {mobileSidebarOpen && (
-            <div 
-              className="fixed inset-0 bg-black bg-opacity-50 dark:bg-black dark:bg-opacity-70 z-40 lg:hidden"
-              onClick={() => setMobileSidebarOpen(false)}
-            />
-          )}
-          
-          {/* Sidebar */}
-          <div className={`fixed inset-y-0 left-0 z-50 lg:relative lg:z-0 lg:flex-shrink-0 lg:h-full transform transition-transform duration-300 ease-in-out ${
-            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          }`}>
-            <ErrorBoundary>
-              <Sidebar
-                currentPage={currentPage}
-                onPageChange={(page) => {
-                  setCurrentPage(page);
-                  setMobileSidebarOpen(false);
-                }}
-                isCollapsed={sidebarCollapsed}
-                onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        <NotificationProvider>
+          <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
+            {/* Mobile sidebar overlay */}
+            {mobileSidebarOpen && (
+              <div 
+                className="fixed inset-0 bg-black bg-opacity-50 dark:bg-black dark:bg-opacity-70 z-40 lg:hidden"
+                onClick={() => setMobileSidebarOpen(false)}
               />
-            </ErrorBoundary>
-          </div>
-          
-          {/* Main content */}
-          <div className="flex-1 flex flex-col min-w-0 h-full">
-            <ErrorBoundary>
-              <Header 
-                onToggleSidebar={() => setMobileSidebarOpen(true)} 
-                user={user}
-                onLogout={handleLogout}
-                onPageChange={setCurrentPage}
-              />
-            </ErrorBoundary>
+            )}
             
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
+            {/* Sidebar */}
+            <div className={`fixed inset-y-0 left-0 z-50 lg:relative lg:z-0 lg:flex-shrink-0 lg:h-full transform transition-transform duration-300 ease-in-out ${
+              mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+            }`}>
               <ErrorBoundary>
-                {currentPage === 'violations' && <ViolationsPage />}
-                {currentPage === 'activity-reports' && <ActivityReportsPage />}
-                {renderPage()}
+                <Sidebar
+                  currentPage={currentPage}
+                  onPageChange={(page) => {
+                    setCurrentPage(page);
+                    setMobileSidebarOpen(false);
+                  }}
+                  isCollapsed={sidebarCollapsed}
+                  onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                />
               </ErrorBoundary>
-            </main>
-          </div>
+            </div>
+            
+            {/* Main content */}
+            <div className="flex-1 flex flex-col min-w-0 h-full">
+              <ErrorBoundary>
+                <Header 
+                  onToggleSidebar={() => setMobileSidebarOpen(true)} 
+                  user={user}
+                  onLogout={handleLogout}
+                  onPageChange={setCurrentPage}
+                />
+              </ErrorBoundary>
+              
+              <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
+                <ErrorBoundary>
+                  {renderPage()}
+                </ErrorBoundary>
+              </main>
+            </div>
 
-          {/* Employee Details Modal */}
-          {selectedEmployee && (
-            <ErrorBoundary>
-              <EmployeeDetailsModal
-                employee={selectedEmployee}
-                onClose={() => {
-                  setSelectedEmployee(null);
-                  setDetailedEmployee(null);
-                }}
-                loading={loadingEmployeeDetails}
-              />
-            </ErrorBoundary>
-          )}
-        </div>
+            {/* Employee Details Modal */}
+            {selectedEmployee && (
+              <ErrorBoundary>
+                <EmployeeDetailsModal
+                  employee={selectedEmployee}
+                  isOpen={!!selectedEmployee}
+                  onClose={() => {
+                    setSelectedEmployee(null);
+                    setDetailedEmployee(null);
+                  }}
+                />
+              </ErrorBoundary>
+            )}
+            
+            {/* Toast Notifications */}
+            <ToastContainer />
+          </div>
+        </NotificationProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

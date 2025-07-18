@@ -13,6 +13,8 @@
     "@types/d3": "^7.4.3",
     "axios": "^1.10.0",
     "d3": "^7.9.0",
+    "google-auth-library": "^10.1.0",
+    "googleapis": "^153.0.0",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

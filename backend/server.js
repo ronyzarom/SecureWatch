@@ -222,13 +222,46 @@ console.log('   ✅ /api/mfa routes registered');
 app.use('/api/notifications', notificationRoutes);
 console.log('   ✅ /api/notifications routes registered');
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    error: 'Route not found',
-    path: req.originalUrl 
+// Static file serving for frontend
+console.log('🌐 Configuring static file serving...');
+const path = require('path');
+
+// Serve static files from the frontend build directory
+if (process.env.NODE_ENV === 'production') {
+  const frontendPath = path.join(__dirname, '../dist');
+  console.log(`   📁 Serving static files from: ${frontendPath}`);
+  
+  // Serve static assets
+  app.use(express.static(frontendPath));
+  console.log('   ✅ Static file middleware configured');
+  
+  // Serve index.html for all non-API routes (SPA routing)
+  app.get('*', (req, res) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/') || req.path.startsWith('/api-docs')) {
+      return res.status(404).json({ 
+        error: 'API route not found',
+        path: req.originalUrl 
+      });
+    }
+    
+    const indexPath = path.join(frontendPath, 'index.html');
+    console.log(`   📄 Serving SPA: ${req.path} -> index.html`);
+    res.sendFile(indexPath);
   });
-});
+  console.log('   ✅ SPA routing configured');
+} else {
+  console.log('   ⚠️  Static serving disabled in development mode');
+  
+  // 404 handler for development
+  app.use('*', (req, res) => {
+    res.status(404).json({ 
+      error: 'Route not found (development mode)',
+      path: req.originalUrl,
+      message: 'In development, frontend runs separately on port 5173'
+    });
+  });
+}
 
 // Global error handler
 app.use((err, req, res, next) => {

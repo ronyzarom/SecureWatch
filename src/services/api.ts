@@ -1,8 +1,19 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
 // Create axios instance with base configuration
+const getBaseURL = () => {
+  // In production, API is served from the same domain
+  if (import.meta.env.PROD) {
+    return window.location.origin;
+  }
+  // In development, API runs on port 3001
+  return 'http://localhost:3001';
+};
+
+console.log(`[API] Base URL: ${getBaseURL()}`);
+
 const api = axios.create({
-  baseURL: 'http://localhost:3001',
+  baseURL: getBaseURL(),
   timeout: 10000,
   withCredentials: true, // Important for session cookies
   headers: {

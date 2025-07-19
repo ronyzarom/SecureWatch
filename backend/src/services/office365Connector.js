@@ -157,13 +157,13 @@ class Office365Connector {
   }
 
   /**
-   * Generate avatar URL for user with multiple fallback options
+   * Generate avatar URL for user - only real photos, no fallbacks
    */
   async generateAvatarUrl(user) {
     const email = user.mail || user.userPrincipalName;
     const name = user.displayName || email.split('@')[0];
     
-    // Create consistent filename
+    // Create consistent filename for local storage
     const crypto = require('crypto');
     const emailHash = crypto.createHash('md5').update(email.toLowerCase().trim()).digest('hex');
     const filename = `${emailHash}.jpg`;
@@ -173,15 +173,15 @@ class Office365Connector {
     // Check if avatar already exists locally
     const fs = require('fs');
     if (fs.existsSync(filepath)) {
-      console.log(`✅ Using existing avatar for ${name}: ${filename}`);
+      console.log(`✅ Using existing real photo for ${name}: ${filename}`);
       return `/api/integrations/avatars/${filename}`;
     }
     
     try {
-      // First try: Office 365 profile photo
+      // Try to get real Office 365 profile photo
       const photo = await this.getUserPhoto(user.id);
       if (photo) {
-        // Save the photo to local filesystem
+        // Save the real photo to local filesystem
         
         // Ensure directory exists
         const dir = path.dirname(filepath);
@@ -192,26 +192,16 @@ class Office365Connector {
         // Save the photo
         fs.writeFileSync(filepath, photo);
         
-        console.log(`✅ Saved Office 365 photo for ${name}: ${filename}`);
+        console.log(`✅ Saved real Office 365 photo for ${name}: ${filename}`);
         return `/api/integrations/avatars/${filename}`;
       }
     } catch (error) {
-      console.log(`ℹ️ No Office 365 photo for ${name}, using fallbacks`);
+      console.log(`ℹ️ No real photo available for ${name} in Office 365`);
     }
 
-    // Second try: Gravatar (based on email hash)
-    
-    // Third option: Generated avatar service
-    const initials = name.split(' ').map(word => word[0]).join('').substring(0, 2).toUpperCase();
-    const colors = ['FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FFEAA7', 'DDA0DD', 'FFB6C1', '87CEEB'];
-    const colorIndex = Math.abs(name.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) % colors.length;
-    const backgroundColor = colors[colorIndex];
-    
-    // Using UI Avatars service as fallback
-    const generatedUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&size=200&background=${backgroundColor}&color=ffffff&bold=true&font-size=0.6`;
-    
-    // For now, we'll prefer Gravatar with generated fallback
-    return `https://www.gravatar.com/avatar/${emailHash}?s=200&d=${encodeURIComponent(generatedUrl)}`;
+    // No real photo available - return null and let frontend handle colored initials
+    console.log(`📝 No photo for ${name} - frontend will show colored initials`);
+    return null;
   }
 
   /**

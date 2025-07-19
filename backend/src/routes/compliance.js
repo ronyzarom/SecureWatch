@@ -327,6 +327,83 @@ router.post('/profiles', requireAdmin, async (req, res) => {
  * =================================
  */
 
+// GET /api/compliance/employees - List all employees with compliance info
+router.get('/employees', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        e.id,
+        e.name,
+        e.email,
+        e.department,
+        e.job_title,
+        e.photo_url,
+        e.risk_level,
+        e.is_active,
+        cp.profile_name as compliance_profile,
+        cp.risk_level as compliance_risk_level,
+        CASE 
+          WHEN cp.id IS NULL THEN 'non_compliant'
+          WHEN e.risk_level = 'high' THEN 'at_risk'
+          ELSE 'compliant'
+        END as compliance_status,
+        ARRAY[cp.profile_name] as compliance_profiles
+      FROM employees e
+      LEFT JOIN compliance_profiles cp ON e.compliance_profile_id = cp.id
+      WHERE e.is_active = true
+      ORDER BY e.name
+    `);
+
+    res.json({
+      employees: result.rows,
+      count: result.rows.length,
+      summary: {
+        total: result.rows.length,
+        compliant: result.rows.filter(e => e.compliance_status === 'compliant').length,
+        at_risk: result.rows.filter(e => e.compliance_status === 'at_risk').length,
+        non_compliant: result.rows.filter(e => e.compliance_status === 'non_compliant').length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching employees for compliance:', error);
+    res.status(500).json({ error: 'Failed to fetch employees for compliance management' });
+  }
+});
+
+// POST /api/compliance/employees/bulk-evaluate - Bulk evaluate all employees
+router.post('/employees/bulk-evaluate', requireAdmin, async (req, res) => {
+  try {
+    const employeesResult = await pool.query('SELECT id FROM employees WHERE is_active = true');
+    const employeeIds = employeesResult.rows.map(row => row.id);
+    
+    let evaluatedCount = 0;
+    let errors = [];
+    
+    for (const employeeId of employeeIds) {
+      try {
+        await complianceEngine.evaluateEmployeeCompliance(employeeId);
+        evaluatedCount++;
+      } catch (error) {
+        console.error(`Failed to evaluate employee ${employeeId}:`, error);
+        errors.push({ employeeId, error: error.message });
+      }
+    }
+    
+    res.json({
+      message: 'Bulk evaluation completed',
+      results: {
+        total: employeeIds.length,
+        evaluated: evaluatedCount,
+        failed: errors.length,
+        errors: errors
+      }
+    });
+  } catch (error) {
+    console.error('Error during bulk employee evaluation:', error);
+    res.status(500).json({ error: 'Failed to perform bulk employee evaluation' });
+  }
+});
+
 // GET /api/compliance/employees/:id/evaluate - Evaluate employee compliance
 router.get('/employees/:id/evaluate', async (req, res) => {
   try {

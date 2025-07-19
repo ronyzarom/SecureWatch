@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../utils/database');
 const { complianceEngine } = require('../services/complianceEngine');
+const { syncComplianceAnalyzer } = require('../services/syncComplianceAnalyzer');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 // Middleware to ensure compliance engine is initialized
@@ -734,6 +735,161 @@ router.get('/ai/status', async (req, res) => {
     console.error('Error checking AI compliance status:', error);
     res.status(500).json({ 
       error: 'Failed to check AI compliance status',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * =================================
+ * SYNC-TRIGGERED AI COMPLIANCE ENDPOINTS
+ * =================================
+ */
+
+// GET /api/compliance/sync/status - Sync compliance analysis status
+router.get('/sync/status', async (req, res) => {
+  try {
+    const syncStats = await syncComplianceAnalyzer.getSyncAnalysisStats();
+    
+    res.json({
+      message: 'Sync-triggered AI compliance analysis status',
+      status: {
+        enabled: syncComplianceAnalyzer.enabled,
+        batchSize: syncComplianceAnalyzer.batchSize,
+        delayBetweenAnalysis: syncComplianceAnalyzer.delayBetweenAnalysis,
+        queueStatus: syncStats?.queueStatus || {
+          queueSize: syncComplianceAnalyzer.analysisQueue.size,
+          processing: syncComplianceAnalyzer.processing,
+          enabled: syncComplianceAnalyzer.enabled
+        }
+      },
+      statistics: syncStats || {},
+      checkedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error checking sync compliance status:', error);
+    res.status(500).json({ 
+      error: 'Failed to check sync compliance status',
+      details: error.message 
+    });
+  }
+});
+
+// POST /api/compliance/sync/analyze-recent - Trigger analysis for recent email activity
+router.post('/sync/analyze-recent', requireAdmin, async (req, res) => {
+  try {
+    const { hours_back = 24 } = req.body;
+
+    console.log(`🔄 Triggering sync analysis for employees with email activity in last ${hours_back} hours`);
+
+    await syncComplianceAnalyzer.analyzeRecentEmailActivity(hours_back);
+
+    res.json({
+      message: `Sync analysis triggered for employees with email activity in last ${hours_back} hours`,
+      hoursBack: hours_back,
+      triggeredAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error triggering recent email analysis:', error);
+    res.status(500).json({ 
+      error: 'Failed to trigger recent email analysis',
+      details: error.message 
+    });
+  }
+});
+
+// POST /api/compliance/sync/queue-employees - Queue specific employees for sync analysis
+router.post('/sync/queue-employees', requireAdmin, async (req, res) => {
+  try {
+    const { employee_ids, reason = 'manual_queue' } = req.body;
+
+    if (!employee_ids || !Array.isArray(employee_ids)) {
+      return res.status(400).json({ 
+        error: 'employee_ids array is required' 
+      });
+    }
+
+    console.log(`📋 Manually queuing ${employee_ids.length} employees for sync compliance analysis`);
+
+    await syncComplianceAnalyzer.queueEmployeesForAnalysis(employee_ids, reason);
+
+    res.json({
+      message: `${employee_ids.length} employees queued for sync compliance analysis`,
+      employeeIds: employee_ids,
+      reason,
+      queuedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error queuing employees for sync analysis:', error);
+    res.status(500).json({ 
+      error: 'Failed to queue employees for sync analysis',
+      details: error.message 
+    });
+  }
+});
+
+// GET /api/compliance/sync/alerts - Get sync-triggered compliance alerts
+router.get('/sync/alerts', async (req, res) => {
+  try {
+    const { status = 'active', severity, employee_id } = req.query;
+
+    let query = `
+      SELECT ca.*, e.name as employee_name, e.department
+      FROM compliance_alerts ca
+      LEFT JOIN employees e ON ca.employee_id = e.id
+      WHERE ca.triggered_by = 'sync_ai_analysis'
+    `;
+    const params = [];
+    let paramCount = 0;
+
+    if (status) {
+      paramCount++;
+      query += ` AND ca.status = $${paramCount}`;
+      params.push(status);
+    }
+
+    if (severity) {
+      paramCount++;
+      query += ` AND ca.severity = $${paramCount}`;
+      params.push(severity);
+    }
+
+    if (employee_id) {
+      paramCount++;
+      query += ` AND ca.employee_id = $${paramCount}`;
+      params.push(employee_id);
+    }
+
+    query += ` ORDER BY ca.created_at DESC LIMIT 100`;
+
+    const result = await pool.query(query, params);
+
+    // Get summary statistics
+    const summaryResult = await pool.query(`
+      SELECT 
+        COUNT(*) as total_alerts,
+        COUNT(CASE WHEN status = 'active' THEN 1 END) as active_alerts,
+        COUNT(CASE WHEN severity = 'high' THEN 1 END) as high_severity_alerts,
+        COUNT(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as alerts_24h
+      FROM compliance_alerts 
+      WHERE triggered_by = 'sync_ai_analysis'
+    `);
+
+    res.json({
+      message: 'Sync-triggered compliance alerts',
+      alerts: result.rows,
+      summary: summaryResult.rows[0],
+      count: result.rows.length,
+      retrievedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error fetching sync compliance alerts:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch sync compliance alerts',
       details: error.message 
     });
   }

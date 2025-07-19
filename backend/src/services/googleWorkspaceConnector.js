@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const { JWT } = require('google-auth-library');
 const { query } = require('../utils/database');
 const emailRiskAnalyzer = require('./emailRiskAnalyzer');
+const { syncComplianceAnalyzer } = require('./syncComplianceAnalyzer');
 
 /**
  * Google Workspace Connector Service

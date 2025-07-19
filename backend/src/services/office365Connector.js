@@ -2,6 +2,7 @@ const { Client } = require('@microsoft/microsoft-graph-client');
 const { ConfidentialClientApplication } = require('@azure/msal-node');
 const { query } = require('../utils/database');
 const emailRiskAnalyzer = require('./emailRiskAnalyzer');
+const { syncComplianceAnalyzer } = require('./syncComplianceAnalyzer');
 
 /**
  * Office 365 Email Connector Service
@@ -348,6 +349,11 @@ class Office365Connector {
 
       // Check for violations and create alerts
       await this.checkForViolations(emailData, analysis, employeeId);
+
+      // Queue employee for AI compliance analysis (sync-triggered)
+      if (employeeId) {
+        await syncComplianceAnalyzer.queueEmployeeForAnalysis(employeeId, 'office365_email_sync');
+      }
 
       return {
         success: true,

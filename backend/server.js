@@ -194,8 +194,15 @@ app.listen(PORT, HOST, () => {
   console.log(`🔗 Health check: http://${HOST}:${PORT}/health`);
   console.log(`📚 API Documentation: http://${HOST}:${PORT}/api-docs`);
   
-  // Start policy action executor
-  policyActionExecutor.start();
+  // Start policy action executor after a brief delay to ensure server is ready
+  setTimeout(() => {
+    try {
+      policyActionExecutor.start();
+      console.log('✅ Policy Action Executor started successfully');
+    } catch (error) {
+      console.error('⚠️  Failed to start Policy Action Executor:', error.message);
+    }
+  }, 2000);
 });
 
 // Graceful shutdown

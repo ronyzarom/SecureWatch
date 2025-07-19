@@ -548,8 +548,25 @@ export const complianceAPI = {
 
   // Employee compliance management
   employees: {
+    getAll: async () => {
+      const response = await api.get('/api/compliance/employees');
+      return response.data;
+    },
+
     evaluate: async (employeeId: number) => {
       const response = await api.get(`/api/compliance/employees/${employeeId}/evaluate`);
+      return response.data;
+    },
+
+    assignProfile: async (employeeId: number, profileId: number) => {
+      const response = await api.put(`/api/compliance/employees/${employeeId}/profile`, {
+        compliance_profile_id: profileId
+      });
+      return response.data;
+    },
+
+    bulkEvaluate: async () => {
+      const response = await api.post('/api/compliance/employees/bulk-evaluate');
       return response.data;
     },
 
@@ -612,6 +629,21 @@ export const complianceAPI = {
       entityType?: string;
       entityId?: number;
       performedBy?: number;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const response = await api.get('/api/compliance/audit-log', { params });
+      return response.data;
+    }
+  },
+
+  // Audit logs (alias for AuditTrail component)
+  auditLogs: {
+    getAll: async (params?: {
+      days?: number;
+      action?: string;
+      entity_type?: string;
+      performed_by?: string;
       limit?: number;
       offset?: number;
     }) => {

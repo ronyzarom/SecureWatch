@@ -55,6 +55,8 @@ const mfaRoutes = require('./src/routes/mfa');
 console.log('   ✅ MFA routes loaded');
 const notificationRoutes = require('./src/routes/notifications');
 console.log('   ✅ Notification routes loaded');
+const complianceRoutes = require('./src/routes/compliance');
+console.log('   ✅ Compliance routes loaded');
 
 // Import services
 console.log('🔧 Loading services...');
@@ -165,7 +167,8 @@ if (process.env.NODE_ENV !== 'production') {
           integrations: '/api/integrations',
           reports: '/api/activity-reports',
           settings: '/api/settings',
-          chat: '/api/chat'
+          chat: '/api/chat',
+          compliance: '/api/compliance'
         }
       },
       environment: process.env.NODE_ENV || 'development'
@@ -224,6 +227,8 @@ app.use('/api/mfa', mfaRoutes);
 console.log('   ✅ /api/mfa routes registered');
 app.use('/api/notifications', notificationRoutes);
 console.log('   ✅ /api/notifications routes registered');
+app.use('/api/compliance', complianceRoutes);
+console.log('   ✅ /api/compliance routes registered');
 
 // Static file serving for frontend
 console.log('🌐 Configuring static file serving...');

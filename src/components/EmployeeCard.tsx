@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Eye, AlertTriangle, Calendar, Mail, Clock, Shield } from 'lucide-react';
 import { Employee } from '../types';
 import { getRiskColor, getRiskTextColor, getRiskBorderColor, formatTimeAgo } from '../utils/riskUtils';
+import { ComplianceStatusBadge, ComplianceProfileBadge, ComplianceIndicator } from './ComplianceStatusBadge';
 
 interface EmployeeCardProps {
   employee: Employee;
   onViewDetails: (employee: Employee) => void;
   layout?: 'grid' | 'list' | 'compact';
   showMetrics?: boolean;
+  showCompliance?: boolean;
   className?: string;
 }
 
@@ -185,6 +187,7 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
   onViewDetails, 
   layout = 'grid',
   showMetrics = false,
+  showCompliance = true, // Default to true since compliance is important
   className = ''
 }) => {
   const violationCount = employee.violationCount || employee.violations?.length || 0;
@@ -207,6 +210,13 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
             <p className="text-sm text-gray-600 dark:text-gray-300">{employee.jobTitle || employee.role}</p>
             <p className="text-sm text-gray-500 dark:text-gray-400">{employee.department}</p>
             
+            {/* Compliance Profile Badge */}
+            {showCompliance && employee.complianceProfile && (
+              <div className="mt-2">
+                <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
+              </div>
+            )}
+            
             <div className="flex items-center space-x-4 mt-3">
               <div className="flex items-center space-x-1">
                 <Calendar className="w-4 h-4 text-gray-400" />
@@ -220,9 +230,30 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   </span>
                 </div>
               )}
+              {/* Compact compliance indicator */}
+              {showCompliance && (
+                <ComplianceIndicator 
+                  status={employee.complianceStatus} 
+                  size="sm"
+                  tooltip={`Compliance: ${employee.complianceStatus?.replace('_', ' ') || 'Unknown'}`}
+                />
+              )}
             </div>
 
             {showMetrics && <EmployeeMetrics employee={employee} />}
+            
+            {/* Detailed compliance status */}
+            {showCompliance && (employee.retentionStatus !== 'compliant' || employee.reviewStatus !== 'up_to_date') && (
+              <div className="mt-3">
+                <ComplianceStatusBadge 
+                  status={employee.complianceStatus}
+                  retentionStatus={employee.retentionStatus}
+                  reviewStatus={employee.reviewStatus}
+                  size="sm"
+                  showIcon={false}
+                />
+              </div>
+            )}
           </div>
           
           <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200 rounded-full transition-colors">
@@ -248,11 +279,25 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10`}>
                   {employee.riskLevel}
                 </span>
+                {/* Compliance indicator in list view */}
+                {showCompliance && (
+                  <ComplianceIndicator 
+                    status={employee.complianceStatus} 
+                    size="sm"
+                  />
+                )}
               </div>
               <div className="flex items-center space-x-4 mt-1">
                 <p className="text-sm text-gray-600 dark:text-gray-300">{employee.jobTitle || employee.role}</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">•</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{employee.department}</p>
+                {/* Compliance profile in list view */}
+                {showCompliance && employee.complianceProfile && (
+                  <>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">•</p>
+                    <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -289,31 +334,40 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
            onClick={() => onViewDetails(employee)}>
         <div className="flex items-center space-x-3">
           <Avatar employee={employee} size="sm" />
+          
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2">
-              <h4 className="font-medium text-gray-900 dark:text-white truncate">{employee.name}</h4>
-              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10`}>
+              <h3 className="font-medium text-gray-900 dark:text-white truncate">{employee.name}</h3>
+              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10 flex-shrink-0`}>
                 {employee.riskLevel}
               </span>
+              {/* Compact compliance indicator */}
+              {showCompliance && (
+                <ComplianceIndicator 
+                  status={employee.complianceStatus} 
+                  size="sm"
+                />
+              )}
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{employee.department}</p>
+            <div className="flex items-center space-x-2 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{employee.department}</p>
+              {violationCount > 0 && (
+                <>
+                  <span className="text-xs text-gray-400">•</span>
+                  <span className="text-xs text-red-600">{violationCount} violations</span>
+                </>
+              )}
+            </div>
           </div>
-          {violationCount > 0 && (
-            <div className="flex items-center space-x-1">
-              <AlertTriangle className="w-3 h-3 text-red-500" />
-              <span className="text-xs text-red-600">{violationCount}</span>
-            </div>
-          )}
+          
+          <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-200 rounded transition-colors flex-shrink-0">
+            <Eye className="w-4 h-4" />
+          </button>
         </div>
       </div>
     );
   }
 
   // Fallback to grid layout
-  return (
-    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border-2 ${getRiskBorderColor(employee.riskLevel)} p-6 hover:shadow-md transition-all duration-200 cursor-pointer ${className}`}
-         onClick={() => onViewDetails(employee)}>
-      {/* Grid layout content */}
-    </div>
-  );
+  return null;
 };

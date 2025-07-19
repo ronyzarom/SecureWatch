@@ -11,6 +11,17 @@ export interface Employee {
   violations: PolicyViolation[];
   connections: Connection[];
   metrics: EmployeeMetrics;
+  
+  // Compliance fields
+  complianceProfileId?: number;
+  complianceProfile?: string;
+  regulatoryStatus?: Record<string, any>;
+  dataRetentionUntil?: string;
+  lastComplianceReview?: string;
+  complianceNotes?: string;
+  complianceStatus?: 'compliant' | 'non_compliant' | 'needs_review' | 'overdue';
+  retentionStatus?: 'compliant' | 'due_soon' | 'overdue';
+  reviewStatus?: 'up_to_date' | 'due_soon' | 'overdue' | 'never_reviewed';
 }
 
 export interface PolicyViolation {
@@ -339,3 +350,83 @@ export type PolicyActionType =
   | 'compliance_alert'
   | 'fraud_investigation'
   | 'immediate_lockdown';
+
+// New compliance-specific interfaces
+export interface ComplianceProfile {
+  id: number;
+  profile_name: string;
+  description: string;
+  applicable_regulations: number[];
+  applicable_policies: number[];
+  retention_period_years: number;
+  monitoring_level: 'minimal' | 'standard' | 'enhanced' | 'strict';
+  data_classification: 'public' | 'internal' | 'confidential' | 'restricted';
+  configuration_overrides: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComplianceRegulation {
+  id: number;
+  regulation_code: string;
+  regulation_name: string;
+  description: string;
+  region: string;
+  is_active: boolean;
+  configuration: Record<string, any>;
+  configured_at: string;
+  updated_at: string;
+}
+
+export interface CompliancePolicy {
+  id: number;
+  policy_code: string;
+  policy_name: string;
+  policy_category: string;
+  description: string;
+  configuration: Record<string, any>;
+  applies_to_departments: string[];
+  applies_to_roles: string[];
+  priority_order: number;
+  is_active: boolean;
+  effective_date: string;
+  expiry_date?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComplianceIncident {
+  id: number;
+  incident_type: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'open' | 'investigating' | 'resolved' | 'closed';
+  title: string;
+  description: string;
+  employee_id?: number;
+  violation_id?: number;
+  regulation_id?: number;
+  policy_id?: number;
+  impact_assessment?: string;
+  remediation_plan?: string;
+  discovered_at: string;
+  must_notify_by?: string;
+  resolved_at?: string;
+  assigned_to?: number;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComplianceEvaluation {
+  employeeId: number;
+  employeeName: string;
+  department: string;
+  complianceProfile: string;
+  evaluatedAt: string;
+  regulations: Record<string, any>;
+  policies: Record<string, any>;
+  overallStatus: 'compliant' | 'non_compliant' | 'critical_violation';
+  violations: any[];
+  recommendations: any[];
+  retentionRequirements: Record<string, any>;
+}

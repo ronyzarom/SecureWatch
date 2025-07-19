@@ -13,7 +13,8 @@ import {
   FileText,
   Database,
   AlertTriangle,
-  TrendingUp
+  TrendingUp,
+  Shield
 } from 'lucide-react';
 import SecureWatchLogoPng from '../assets/SecureWatchLogo.png';
 
@@ -77,6 +78,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Violations',
       icon: AlertTriangle,
       page: 'violations'
+    },
+    {
+      id: 'compliance',
+      label: 'Compliance',
+      icon: Shield,
+      page: 'compliance'
     },
     {
       id: 'activity-reports',

@@ -468,5 +468,182 @@ export const activityReportsAPI = {
   }
 };
 
-// Export the configured axios instance
+// ============================================================
+// COMPLIANCE MANAGEMENT
+// ============================================================
+
+export const complianceAPI = {
+  // Dashboard and overview
+  getDashboard: async () => {
+    const response = await api.get('/api/compliance/dashboard');
+    return response.data;
+  },
+
+  // Regulations management
+  regulations: {
+    getAll: async () => {
+      const response = await api.get('/api/compliance/regulations');
+      return response.data;
+    },
+
+    getActive: async () => {
+      const response = await api.get('/api/compliance/regulations/active');
+      return response.data;
+    },
+
+    activate: async (code: string, isActive: boolean, configuration?: any) => {
+      const response = await api.put(`/api/compliance/regulations/${code}/activate`, {
+        is_active: isActive,
+        configuration
+      });
+      return response.data;
+    }
+  },
+
+  // Internal policies management
+  policies: {
+    getAll: async () => {
+      const response = await api.get('/api/compliance/policies');
+      return response.data;
+    },
+
+    create: async (policyData: any) => {
+      const response = await api.post('/api/compliance/policies', policyData);
+      return response.data;
+    },
+
+    update: async (id: number, policyData: any) => {
+      const response = await api.put(`/api/compliance/policies/${id}`, policyData);
+      return response.data;
+    },
+
+    delete: async (id: number) => {
+      const response = await api.delete(`/api/compliance/policies/${id}`);
+      return response.data;
+    }
+  },
+
+  // Compliance profiles management
+  profiles: {
+    getAll: async () => {
+      const response = await api.get('/api/compliance/profiles');
+      return response.data;
+    },
+
+    create: async (profileData: any) => {
+      const response = await api.post('/api/compliance/profiles', profileData);
+      return response.data;
+    },
+
+    update: async (id: number, profileData: any) => {
+      const response = await api.put(`/api/compliance/profiles/${id}`, profileData);
+      return response.data;
+    },
+
+    delete: async (id: number) => {
+      const response = await api.delete(`/api/compliance/profiles/${id}`);
+      return response.data;
+    }
+  },
+
+  // Employee compliance management
+  employees: {
+    evaluate: async (employeeId: number) => {
+      const response = await api.get(`/api/compliance/employees/${employeeId}/evaluate`);
+      return response.data;
+    },
+
+    updateProfile: async (employeeId: number, complianceProfileId: number, notes?: string) => {
+      const response = await api.put(`/api/compliance/employees/${employeeId}/profile`, {
+        compliance_profile_id: complianceProfileId,
+        compliance_notes: notes
+      });
+      return response.data;
+    },
+
+    getStatus: async (params?: {
+      department?: string;
+      profile?: string;
+      status?: string;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const response = await api.get('/api/compliance/employees/status', { params });
+      return response.data;
+    }
+  },
+
+  // Compliance incidents management
+  incidents: {
+    getAll: async (params?: {
+      status?: string;
+      severity?: string;
+      employeeId?: number;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const response = await api.get('/api/compliance/incidents', { params });
+      return response.data;
+    },
+
+    create: async (incidentData: any) => {
+      const response = await api.post('/api/compliance/incidents', incidentData);
+      return response.data;
+    },
+
+    update: async (id: number, incidentData: any) => {
+      const response = await api.put(`/api/compliance/incidents/${id}`, incidentData);
+      return response.data;
+    },
+
+    resolve: async (id: number, resolution: string) => {
+      const response = await api.put(`/api/compliance/incidents/${id}`, {
+        status: 'resolved',
+        remediation_plan: resolution,
+        resolved_at: new Date().toISOString()
+      });
+      return response.data;
+    }
+  },
+
+  // Audit trail
+  audit: {
+    getLog: async (params?: {
+      entityType?: string;
+      entityId?: number;
+      performedBy?: number;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const response = await api.get('/api/compliance/audit-log', { params });
+      return response.data;
+    }
+  },
+
+  // System operations
+  refreshEngine: async () => {
+    const response = await api.post('/api/compliance/refresh');
+    return response.data;
+  },
+
+  // Bulk operations
+  bulkEvaluate: async (employeeIds: number[]) => {
+    const results = await Promise.all(
+      employeeIds.map(id => api.get(`/api/compliance/employees/${id}/evaluate`))
+    );
+    return results.map(response => response.data);
+  },
+
+  bulkAssignProfile: async (employeeIds: number[], profileId: number) => {
+    const results = await Promise.all(
+      employeeIds.map(id => 
+        api.put(`/api/compliance/employees/${id}/profile`, {
+          compliance_profile_id: profileId
+        })
+      )
+    );
+    return results.map(response => response.data);
+  }
+};
+
 export default api; 

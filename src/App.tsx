@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, AlertTriangle, Shield, TrendingUp } from 'lucide-react';
+import { Users, AlertTriangle, Shield, TrendingUp, Clock } from 'lucide-react';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { Header } from './components/Header';
@@ -260,14 +260,14 @@ function App() {
         return (
           <>
             {/* Dashboard Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
               {loading ? (
-                <div className="col-span-4 text-center py-8">
+                <div className="col-span-6 text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                   <p className="mt-2 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
                 </div>
               ) : error ? (
-                <div className="col-span-4 text-center py-8 text-red-600">
+                <div className="col-span-6 text-center py-8 text-red-600">
                   <p>{error}</p>
                   <button 
                     onClick={fetchDashboardData}
@@ -301,6 +301,21 @@ function App() {
                     value={dashboardData?.summary?.totalViolations || '0'}
                     icon={TrendingUp}
                     color="text-yellow-600"
+                  />
+                  {/* New Compliance Metrics */}
+                  <MetricsCard
+                    title="Compliant Employees"
+                    value={employees.filter(emp => emp.complianceStatus === 'compliant').length.toString()}
+                    icon={Shield}
+                    color="text-green-600"
+                    subtitle={`${Math.round((employees.filter(emp => emp.complianceStatus === 'compliant').length / Math.max(employees.length, 1)) * 100)}% compliant`}
+                  />
+                  <MetricsCard
+                    title="Compliance Reviews Due"
+                    value={employees.filter(emp => emp.reviewStatus === 'overdue' || emp.reviewStatus === 'due_soon').length.toString()}
+                    icon={Clock}
+                    color="text-amber-600"
+                    subtitle={`${employees.filter(emp => emp.reviewStatus === 'overdue').length} overdue`}
                   />
                 </>
               )}
@@ -439,6 +454,122 @@ function App() {
 
               {/* Sidebar */}
               <div className="space-y-6">
+                {/* Compliance Overview Panel */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                      <Shield className="w-5 h-5 mr-2 text-blue-600" />
+                      Compliance Overview
+                    </h3>
+                  </div>
+                  
+                  {employees.length > 0 ? (
+                    <div className="space-y-4">
+                      {/* Compliance Status Breakdown */}
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status Distribution</h4>
+                        <div className="space-y-2">
+                          {[
+                            { status: 'compliant', label: 'Compliant', color: 'bg-green-500', textColor: 'text-green-700 dark:text-green-400' },
+                            { status: 'needs_review', label: 'Needs Review', color: 'bg-yellow-500', textColor: 'text-yellow-700 dark:text-yellow-400' },
+                            { status: 'non_compliant', label: 'Non-Compliant', color: 'bg-red-500', textColor: 'text-red-700 dark:text-red-400' },
+                            { status: 'overdue', label: 'Overdue', color: 'bg-orange-500', textColor: 'text-orange-700 dark:text-orange-400' }
+                          ].map(({ status, label, color, textColor }) => {
+                            const count = employees.filter(emp => emp.complianceStatus === status).length;
+                            const percentage = Math.round((count / employees.length) * 100);
+                            
+                            return (
+                              <div key={status} className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <div className={`w-3 h-3 rounded-full ${color}`}></div>
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <span className={`text-sm font-medium ${textColor}`}>{count}</span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">({percentage}%)</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      
+                      {/* Review Status */}
+                      <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Review Status</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Up to Date</span>
+                            <span className="text-green-600 dark:text-green-400 font-medium">
+                              {employees.filter(emp => emp.reviewStatus === 'up_to_date').length}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Due Soon</span>
+                            <span className="text-yellow-600 dark:text-yellow-400 font-medium">
+                              {employees.filter(emp => emp.reviewStatus === 'due_soon').length}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Overdue</span>
+                            <span className="text-red-600 dark:text-red-400 font-medium">
+                              {employees.filter(emp => emp.reviewStatus === 'overdue').length}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Retention Status */}
+                      <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Retention Status</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Compliant</span>
+                            <span className="text-green-600 dark:text-green-400 font-medium">
+                              {employees.filter(emp => emp.retentionStatus === 'compliant').length}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Due Soon</span>
+                            <span className="text-yellow-600 dark:text-yellow-400 font-medium">
+                              {employees.filter(emp => emp.retentionStatus === 'due_soon').length}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Overdue</span>
+                            <span className="text-red-600 dark:text-red-400 font-medium">
+                              {employees.filter(emp => emp.retentionStatus === 'overdue').length}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Compliance Profiles */}
+                      <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Profile Assignment</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Assigned</span>
+                            <span className="text-blue-600 dark:text-blue-400 font-medium">
+                              {employees.filter(emp => emp.complianceProfile && emp.complianceProfile.trim() !== '').length}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Unassigned</span>
+                            <span className="text-gray-600 dark:text-gray-400 font-medium">
+                              {employees.filter(emp => !emp.complianceProfile || emp.complianceProfile.trim() === '').length}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No employee data available</p>
+                    </div>
+                  )}
+                </div>
+                
                 <NetworkAnalysis />
                 <EmailAnalytics />
                 <RecentActivity />

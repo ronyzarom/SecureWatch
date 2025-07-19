@@ -15,10 +15,9 @@ import { RegulationsManagement } from '../components/compliance/RegulationsManag
 import { PoliciesManagement } from '../components/compliance/PoliciesManagement';
 import { ProfilesManagement } from '../components/compliance/ProfilesManagement';
 import { EmployeeStatusManagement } from '../components/compliance/EmployeeStatusManagement';
-import { IncidentsManagement } from '../components/compliance/IncidentsManagement';
 import { AuditTrail } from '../components/compliance/AuditTrail';
 
-type TabType = 'dashboard' | 'regulations' | 'policies' | 'profiles' | 'employees' | 'incidents' | 'audit';
+type TabType = 'dashboard' | 'regulations' | 'policies' | 'profiles' | 'employees' | 'audit';
 
 interface TabConfig {
   id: TabType;
@@ -59,12 +58,6 @@ const tabs: TabConfig[] = [
     description: 'Employee compliance monitoring'
   },
   {
-    id: 'incidents',
-    label: 'Incidents',
-    icon: AlertTriangle,
-    description: 'Compliance incident tracking'
-  },
-  {
     id: 'audit',
     label: 'Audit Trail',
     icon: Eye,
@@ -87,8 +80,6 @@ const CompliancePage: React.FC = () => {
         return <ProfilesManagement />;
       case 'employees':
         return <EmployeeStatusManagement />;
-      case 'incidents':
-        return <IncidentsManagement />;
       case 'audit':
         return <AuditTrail />;
       default:

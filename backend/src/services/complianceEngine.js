@@ -442,9 +442,9 @@ class ComplianceEngine {
       ...Object.values(compliance.policies)
     ];
 
-    const hasViolations = allEvaluations.some(eval => eval.violations.length > 0);
-    const hasCritical = allEvaluations.some(eval => 
-      eval.violations.some(v => v.severity === 'critical')
+    const hasViolations = allEvaluations.some(evaluation => evaluation.violations.length > 0);
+    const hasCritical = allEvaluations.some(evaluation => 
+      evaluation.violations.some(v => v.severity === 'critical')
     );
 
     if (hasCritical) return 'critical_violation';

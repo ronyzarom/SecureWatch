@@ -12,6 +12,7 @@ const emailRiskAnalyzer = require('./emailRiskAnalyzer');
  * - Process emails with AI for risk analysis
  * - Store processed emails in database
  * - Extract violations and security insights
+ * - Assign compliance profiles and track regulatory status
  */
 class Office365Connector {
   constructor() {
@@ -20,6 +21,7 @@ class Office365Connector {
     this.accessToken = null;
     this.isConfigured = false;
     this.config = null;
+    this.complianceEnabled = false;
   }
 
   /**

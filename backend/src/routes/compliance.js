@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../utils/database');
 const { complianceEngine } = require('../services/complianceEngine');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 // Middleware to ensure compliance engine is initialized
 const ensureComplianceEngine = async (req, res, next) => {
@@ -26,7 +26,7 @@ const ensureComplianceEngine = async (req, res, next) => {
 };
 
 // Apply authentication and engine initialization to all routes
-router.use(authenticateToken);
+router.use(requireAuth);
 router.use(ensureComplianceEngine);
 
 /**

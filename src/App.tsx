@@ -23,7 +23,7 @@ import { PoliciesPage } from './pages/PoliciesPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { ViolationsPage } from './pages/ViolationsPage';
 import { ActivityReportsPage } from './pages/ActivityReportsPage';
-import { CompliancePage } from './pages/CompliancePage';
+import CompliancePage from './pages/CompliancePage';
 // Mock data imports removed - now using real API data
 import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';

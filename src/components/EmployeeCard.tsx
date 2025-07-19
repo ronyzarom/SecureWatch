@@ -45,17 +45,30 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
     return colors[index];
   };
 
-  const photoUrl = employee.photo;
+  // Handle multiple possible photo field names and validate URL
+  const getPhotoUrl = (employee: any) => {
+    const possibleFields = [employee.photo, employee.photoUrl, employee.photo_url];
+    const url = possibleFields.find(field => field && typeof field === 'string' && field.trim() !== '');
+    
+    // Validate URL format
+    if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) {
+      return url;
+    }
+    return null;
+  };
+
+  const photoUrl = getPhotoUrl(employee);
   const initials = getInitials(employee.name);
   const backgroundColor = getBackgroundColor(employee.name);
 
-  // If no photo URL or image failed, show initials avatar
+  // Always show initials avatar if no valid photo URL or image failed
   if (!photoUrl || imageError) {
     return (
       <div className="relative">
         <div 
           className={`${config.avatar} rounded-full flex items-center justify-center text-white font-bold ${config.text} border-2 border-gray-200 dark:border-gray-600`}
           style={{ backgroundColor }}
+          title={`${employee.name} (${initials})`}
         >
           {initials}
         </div>
@@ -83,10 +96,12 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
         alt={employee.name}
         className={`${config.avatar} rounded-full object-cover border-2 border-gray-200 dark:border-gray-600 ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
         onError={() => {
+          console.log(`Avatar failed to load for ${employee.name}: ${photoUrl}`);
           setImageError(true);
           setImageLoading(false);
         }}
         onLoad={() => {
+          console.log(`Avatar loaded successfully for ${employee.name}`);
           setImageLoading(false);
         }}
       />

@@ -43,16 +43,29 @@ const ModalAvatar: React.FC<{ employee: Employee }> = ({ employee }) => {
     return colors[index];
   };
 
-  const photoUrl = employee.photoUrl || employee.photo;
+  // Handle multiple possible photo field names and validate URL
+  const getPhotoUrl = (employee: any) => {
+    const possibleFields = [employee.photo, employee.photoUrl, employee.photo_url];
+    const url = possibleFields.find(field => field && typeof field === 'string' && field.trim() !== '');
+    
+    // Validate URL format
+    if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) {
+      return url;
+    }
+    return null;
+  };
+
+  const photoUrl = getPhotoUrl(employee);
   const initials = getInitials(employee.name);
   const backgroundColor = getBackgroundColor(employee.name);
 
-  // If no photo URL or image failed, show initials avatar
+  // Always show initials avatar if no valid photo URL or image failed
   if (!photoUrl || imageError) {
     return (
       <div 
         className="w-full h-full flex items-center justify-center text-white font-bold text-2xl"
         style={{ backgroundColor }}
+        title={`${employee.name} (${initials})`}
       >
         {initials}
       </div>
@@ -74,10 +87,12 @@ const ModalAvatar: React.FC<{ employee: Employee }> = ({ employee }) => {
         alt={employee.name}
         className={`w-full h-full object-cover ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
         onError={() => {
+          console.log(`Modal avatar failed to load for ${employee.name}: ${photoUrl}`);
           setImageError(true);
           setImageLoading(false);
         }}
         onLoad={() => {
+          console.log(`Modal avatar loaded successfully for ${employee.name}`);
           setImageLoading(false);
         }}
       />

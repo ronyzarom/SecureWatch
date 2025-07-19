@@ -341,7 +341,8 @@ router.get('/employees', async (req, res) => {
         e.risk_level,
         e.is_active,
         cp.profile_name as compliance_profile,
-        cp.risk_level as compliance_risk_level,
+        cp.monitoring_level,
+        cp.data_classification,
         CASE 
           WHEN cp.id IS NULL THEN 'non_compliant'
           WHEN e.risk_level = 'high' THEN 'at_risk'

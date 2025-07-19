@@ -30,6 +30,8 @@ interface PolicyCardProps {
 
 const PolicyCard: React.FC<PolicyCardProps> = ({ policy, onEdit, onDelete, onToggleStatus }) => {
   const getCategoryColor = (category: string) => {
+    if (!category) return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
+    
     switch (category.toLowerCase()) {
       case 'privacy': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400';
       case 'security': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';

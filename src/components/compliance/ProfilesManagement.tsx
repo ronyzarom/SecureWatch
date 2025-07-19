@@ -30,6 +30,8 @@ interface ProfileCardProps {
 
 const ProfileCard: React.FC<ProfileCardProps> = ({ profile, onEdit, onDelete, onClone, onToggleStatus }) => {
   const getRiskLevelColor = (level: string) => {
+    if (!level) return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
+    
     switch (level.toLowerCase()) {
       case 'critical': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
       case 'high': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400';

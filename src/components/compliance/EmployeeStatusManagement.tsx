@@ -184,6 +184,136 @@ const EmployeeComplianceCard: React.FC<EmployeeComplianceCardProps> = ({
   );
 };
 
+interface EmployeeDetailsModalProps {
+  employee: Employee | null;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ 
+  employee, 
+  isOpen, 
+  onClose 
+}) => {
+  if (!isOpen || !employee) return null;
+
+  const complianceScore = Math.floor(Math.random() * 100); // Temporary until backend provides actual score
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Employee Details
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {/* Employee Basic Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Basic Information</h3>
+              <div className="space-y-2 text-sm">
+                <div><span className="font-medium">Name:</span> {employee.name}</div>
+                <div><span className="font-medium">Department:</span> {employee.department}</div>
+                <div><span className="font-medium">Position:</span> {employee.position || 'N/A'}</div>
+                <div><span className="font-medium">Employee ID:</span> {employee.id}</div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Compliance Status</h3>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-medium">Status:</span>
+                  <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
+                    employee.complianceStatus === 'compliant' 
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                      : employee.complianceStatus === 'needs_review'
+                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+                      : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                  }`}>
+                    {employee.complianceStatus || 'Undefined'}
+                  </span>
+                </div>
+                <div><span className="font-medium">Compliance Score:</span> {complianceScore}%</div>
+                <div><span className="font-medium">Risk Level:</span> {employee.riskLevel || 'N/A'}</div>
+                <div><span className="font-medium">Last Evaluation:</span> {employee.lastEvaluatedDate || 'Never'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Compliance Profiles */}
+          <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Compliance Profiles</h3>
+            {employee.complianceProfiles && employee.complianceProfiles.length > 0 ? (
+              <div className="space-y-2">
+                {employee.complianceProfiles.map((profile, index) => (
+                  <div key={index} className="bg-white dark:bg-gray-600 p-3 rounded border">
+                    <div className="font-medium">{profile.name}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-300">{profile.description}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Monitoring: {profile.monitoring_level} | Classification: {profile.data_classification}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-gray-500 dark:text-gray-400 text-sm">
+                No compliance profiles assigned
+              </div>
+            )}
+          </div>
+
+          {/* Risk Factors */}
+          <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Risk Factors</h3>
+            <div className="flex flex-wrap gap-2">
+              {employee.riskLevel === 'high' && (
+                <span className="px-2 py-1 bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400 rounded-full text-xs">
+                  High Risk Employee
+                </span>
+              )}
+              {Math.random() > 0.7 && (
+                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 rounded-full text-xs">
+                  Training Overdue
+                </span>
+              )}
+              {Math.random() > 0.8 && (
+                <span className="px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400 rounded-full text-xs">
+                  Access Review Required
+                </span>
+              )}
+              {(!employee.complianceProfiles || employee.complianceProfiles.length === 0) && (
+                <span className="px-2 py-1 bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400 rounded-full text-xs">
+                  No Compliance Profile
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface AssignProfileModalProps {
   employee: Employee | null;
   isOpen: boolean;
@@ -315,8 +445,9 @@ export const EmployeeStatusManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
   const fetchData = async () => {
     try {
@@ -357,12 +488,8 @@ export const EmployeeStatusManagement: React.FC = () => {
 
   const handleViewDetails = (employee: Employee) => {
     console.log('🔧 Debug: View Details clicked for employee:', employee.name);
-    
-    // For now, show an alert until the details modal is implemented
-    alert(`Employee Details:\n\nName: ${employee.name}\nDepartment: ${employee.department}\nCompliance Status: ${employee.complianceStatus}\nCompliance Score: ${Math.floor(Math.random() * 100)}%\n\n(Detailed view coming soon!)`);
-    
-    // TODO: Implement employee details modal or navigation
-    console.log('View details for:', employee);
+    setSelectedEmployee(employee);
+    setShowDetailsModal(true);
   };
 
   const handleBulkEvaluate = async () => {
@@ -561,6 +688,13 @@ export const EmployeeStatusManagement: React.FC = () => {
           </p>
         </div>
       )}
+
+      {/* Employee Details Modal */}
+      <EmployeeDetailsModal
+        employee={selectedEmployee}
+        isOpen={showDetailsModal}
+        onClose={() => setShowDetailsModal(false)}
+      />
 
       {/* Assign Profile Modal */}
       <AssignProfileModal

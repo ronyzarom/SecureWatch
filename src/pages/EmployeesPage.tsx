@@ -27,6 +27,13 @@ export const EmployeesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [riskFilter, setRiskFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  
+  // Compliance-specific filters
+  const [complianceStatusFilter, setComplianceStatusFilter] = useState<string>('all');
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all');
+  const [retentionStatusFilter, setRetentionStatusFilter] = useState<string>('all');
+  const [complianceProfileFilter, setComplianceProfileFilter] = useState<string>('all');
+  
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AppError | null>(null);
@@ -91,6 +98,10 @@ export const EmployeesPage: React.FC = () => {
     const department = employee.department || '';
     const role = employee.role || employee.jobTitle || employee.job_title || '';
     const riskLevel = employee.riskLevel || employee.risk_level || 'Low';
+    const complianceStatus = employee.complianceStatus || '';
+    const reviewStatus = employee.reviewStatus || '';
+    const retentionStatus = employee.retentionStatus || '';
+    const complianceProfile = employee.complianceProfile || '';
     
     const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -99,7 +110,17 @@ export const EmployeesPage: React.FC = () => {
     const matchesRisk = riskFilter === 'all' || riskLevel === riskFilter;
     const matchesDepartment = departmentFilter === 'all' || department === departmentFilter;
     
-    return matchesSearch && matchesRisk && matchesDepartment;
+    // Compliance-specific filters
+    const matchesComplianceStatus = complianceStatusFilter === 'all' || complianceStatus === complianceStatusFilter;
+    const matchesReviewStatus = reviewStatusFilter === 'all' || reviewStatus === reviewStatusFilter;
+    const matchesRetentionStatus = retentionStatusFilter === 'all' || retentionStatus === retentionStatusFilter;
+    const matchesComplianceProfile = complianceProfileFilter === 'all' || 
+                                   (complianceProfileFilter === 'assigned' && complianceProfile && complianceProfile.trim() !== '') ||
+                                   (complianceProfileFilter === 'unassigned' && (!complianceProfile || complianceProfile.trim() === '')) ||
+                                   complianceProfile === complianceProfileFilter;
+    
+    return matchesSearch && matchesRisk && matchesDepartment && 
+           matchesComplianceStatus && matchesReviewStatus && matchesRetentionStatus && matchesComplianceProfile;
   });
 
   // Enhanced sorting logic
@@ -141,7 +162,7 @@ export const EmployeesPage: React.FC = () => {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, riskFilter, departmentFilter, sortBy, sortOrder, itemsPerPage]);
+  }, [searchTerm, riskFilter, departmentFilter, complianceStatusFilter, reviewStatusFilter, retentionStatusFilter, complianceProfileFilter, sortBy, sortOrder, itemsPerPage]);
   const departments = [...new Set(employees.map(emp => emp.department).filter(Boolean))];
 
   // Helper functions
@@ -149,12 +170,16 @@ export const EmployeesPage: React.FC = () => {
     setSearchTerm('');
     setRiskFilter('all');
     setDepartmentFilter('all');
-    setSortBy('riskScore');
-    setSortOrder('desc');
+    setComplianceStatusFilter('all');
+    setReviewStatusFilter('all');
+    setRetentionStatusFilter('all');
+    setComplianceProfileFilter('all');
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = searchTerm || riskFilter !== 'all' || departmentFilter !== 'all';
+  const hasActiveFilters = searchTerm || riskFilter !== 'all' || departmentFilter !== 'all' || 
+                          complianceStatusFilter !== 'all' || reviewStatusFilter !== 'all' || 
+                          retentionStatusFilter !== 'all' || complianceProfileFilter !== 'all';
 
   const getRiskStats = () => {
     const stats = employees.reduce((acc, emp) => {
@@ -354,6 +379,60 @@ export const EmployeesPage: React.FC = () => {
                 {departments.map(dept => (
                   <option key={dept} value={dept}>{dept}</option>
                 ))}
+              </select>
+            </div>
+          </div>
+          
+          {/* Compliance-specific filters */}
+          <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+            <div className="flex items-center space-x-2 mb-3">
+              <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Compliance Filters</span>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <select
+                value={complianceStatusFilter}
+                onChange={(e) => setComplianceStatusFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="all">All Compliance Status</option>
+                <option value="compliant">Compliant</option>
+                <option value="needs_review">Needs Review</option>
+                <option value="non_compliant">Non-Compliant</option>
+                <option value="overdue">Overdue</option>
+              </select>
+              
+              <select
+                value={reviewStatusFilter}
+                onChange={(e) => setReviewStatusFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="all">All Review Status</option>
+                <option value="up_to_date">Up to Date</option>
+                <option value="due_soon">Due Soon</option>
+                <option value="overdue">Review Overdue</option>
+                <option value="never_reviewed">Never Reviewed</option>
+              </select>
+              
+              <select
+                value={retentionStatusFilter}
+                onChange={(e) => setRetentionStatusFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="all">All Retention Status</option>
+                <option value="compliant">Retention Compliant</option>
+                <option value="due_soon">Due Soon</option>
+                <option value="overdue">Retention Overdue</option>
+              </select>
+              
+              <select
+                value={complianceProfileFilter}
+                onChange={(e) => setComplianceProfileFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="all">All Profiles</option>
+                <option value="assigned">Profile Assigned</option>
+                <option value="unassigned">No Profile</option>
               </select>
             </div>
           </div>

@@ -143,32 +143,35 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Root endpoint - API information
-app.get('/', (req, res) => {
-  res.json({
-    name: 'SecureWatch API',
-    version: '1.0.0',
-    description: 'Enterprise security monitoring and threat detection platform',
-    status: 'running',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      health: '/health',
-      documentation: '/api-docs',
-      api: {
-        authentication: '/api/auth',
-        dashboard: '/api/dashboard',
-        employees: '/api/employees',
-        violations: '/api/violations',
-        policies: '/api/policies',
-        integrations: '/api/integrations',
-        reports: '/api/activity-reports',
-        settings: '/api/settings',
-        chat: '/api/chat'
-      }
-    },
-    environment: process.env.NODE_ENV || 'development'
+// Root endpoint will be handled by static file serving in production
+// In development, show API information
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/', (req, res) => {
+    res.json({
+      name: 'SecureWatch API',
+      version: '1.0.0',
+      description: 'Enterprise security monitoring and threat detection platform',
+      status: 'running',
+      timestamp: new Date().toISOString(),
+      endpoints: {
+        health: '/health',
+        documentation: '/api-docs',
+        api: {
+          authentication: '/api/auth',
+          dashboard: '/api/dashboard',
+          employees: '/api/employees',
+          violations: '/api/violations',
+          policies: '/api/policies',
+          integrations: '/api/integrations',
+          reports: '/api/activity-reports',
+          settings: '/api/settings',
+          chat: '/api/chat'
+        }
+      },
+      environment: process.env.NODE_ENV || 'development'
+    });
   });
-});
+}
 
 // CORS test endpoint
 app.get('/api/test', (req, res) => {

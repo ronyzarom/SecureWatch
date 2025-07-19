@@ -193,11 +193,13 @@ router.get('/stats', async (req, res) => {
         END
     `);
 
-    // AI validation status
-    const aiValidationStats = await query(`
-      SELECT ai_validation_status, COUNT(*) as count
+    // Compliance severity distribution (replacing AI validation stats)
+    const complianceStats = await query(`
+      SELECT 
+        COALESCE(compliance_severity, 'Not Classified') as compliance_severity, 
+        COUNT(*) as count
       FROM violations
-      GROUP BY ai_validation_status
+      GROUP BY compliance_severity
       ORDER BY count DESC
     `);
 
@@ -227,7 +229,7 @@ router.get('/stats', async (req, res) => {
     res.json({
       statusDistribution: statusStats.rows,
       severityDistribution: severityStats.rows,
-      aiValidationDistribution: aiValidationStats.rows,
+      complianceDistribution: complianceStats.rows,
       trends: trendsStats.rows,
       topViolationTypes: typeStats.rows,
       summary: {

@@ -123,7 +123,7 @@ class Office365Connector {
 
       const users = await this.graphClient
         .api('/users')
-        .select('id,displayName,mail,userPrincipalName,department,jobTitle')
+        .select('id,displayName,mail,userPrincipalName,department,jobTitle,accountEnabled,userType')
         .get();
 
       console.log(`✅ Retrieved ${users.value.length} users from Office 365`);
@@ -646,6 +646,125 @@ class Office365Connector {
   }
 
   /**
+   * Get the configured company domain for filtering employees
+   */
+  async getCompanyDomain() {
+    try {
+      // First, check if domain is configured in Office 365 settings
+      const configResult = await query(
+        'SELECT value FROM app_settings WHERE key = $1',
+        ['office365_config']
+      );
+
+      if (configResult.rows.length > 0) {
+        const config = JSON.parse(configResult.rows[0].value);
+        if (config.companyDomain) {
+          console.log(`📋 Using configured company domain: ${config.companyDomain}`);
+          return config.companyDomain;
+        }
+      }
+
+      // Auto-detect domain from existing employees
+      const domainResult = await query(`
+        SELECT 
+          SUBSTRING(email FROM '@(.*)$') as domain,
+          COUNT(*) as count
+        FROM employees 
+        WHERE email LIKE '%@%'
+        GROUP BY SUBSTRING(email FROM '@(.*)$')
+        ORDER BY count DESC
+        LIMIT 1
+      `);
+
+      if (domainResult.rows.length > 0) {
+        const domain = domainResult.rows[0].domain;
+        console.log(`🔍 Auto-detected company domain: ${domain} (${domainResult.rows[0].count} employees)`);
+        return domain;
+      }
+
+      // Fallback: extract from tenant info or use default
+      console.log('⚠️  No domain configured or detected, using cyfox.com as default');
+      return 'cyfox.com';
+
+    } catch (error) {
+      console.error('❌ Error getting company domain:', error);
+      return 'cyfox.com'; // Safe fallback
+    }
+  }
+
+  /**
+   * Filter users to only include employees from the company domain
+   */
+  async filterEmployeesByDomain(users) {
+    const companyDomain = await this.getCompanyDomain();
+    console.log(`🔍 Filtering users for company domain: ${companyDomain}`);
+
+    const filtered = users.filter(user => {
+      const email = user.mail || user.userPrincipalName;
+      const name = user.displayName || '';
+      
+      // Skip if no email
+      if (!email) {
+        console.log(`❌ Skipping user with no email: ${name}`);
+        return false;
+      }
+
+      // Skip if account is disabled
+      if (user.accountEnabled === false) {
+        console.log(`❌ Skipping disabled account: ${name} (${email})`);
+        return false;
+      }
+
+      // Skip if user type indicates non-employee (guest, etc.)
+      if (user.userType && user.userType.toLowerCase() !== 'member') {
+        console.log(`❌ Skipping non-member user: ${name} (${email}) - Type: ${user.userType}`);
+        return false;
+      }
+
+      // Main filter: Only include users from company domain
+      const emailDomain = email.split('@')[1]?.toLowerCase();
+      if (emailDomain !== companyDomain.toLowerCase()) {
+        console.log(`❌ Skipping external domain user: ${name} (${email}) - Domain: ${emailDomain}`);
+        return false;
+      }
+
+      // Additional quality filters for company domain users
+      
+      // Skip obvious service accounts (even within company domain)
+      const emailLocalPart = email.split('@')[0].toLowerCase();
+      const servicePatterns = [
+        /^(noreply|donotreply|no-reply|do-not-reply)$/i,
+        /^(admin|system|service|api|bot|automated)$/i,
+        /^(alerts?|notifications?|reports?)$/i,
+        /^(support|help|contact|info)$/i
+      ];
+
+      for (const pattern of servicePatterns) {
+        if (pattern.test(emailLocalPart)) {
+          console.log(`❌ Skipping service account in company domain: ${name} (${email})`);
+          return false;
+        }
+      }
+
+      // Skip if name is clearly not a person
+      if (!name || name.length < 2) {
+        console.log(`❌ Skipping user with invalid name: ${name} (${email})`);
+        return false;
+      }
+
+      console.log(`✅ Including company employee: ${name} (${email})`);
+      return true;
+    });
+
+    console.log(`📊 Domain filtering results:`);
+    console.log(`   📥 Total users: ${users.length}`);
+    console.log(`   ✅ Company domain (${companyDomain}): ${filtered.length}`);
+    console.log(`   🚫 Excluded (external/service): ${users.length - filtered.length}`);
+    
+    return filtered;
+  }
+
+  /**
    * Sync Office 365 users to employees table
    */
   async syncUsersToEmployees() {
@@ -653,10 +772,16 @@ class Office365Connector {
       console.log('👥 Starting Office 365 user sync to employees table...');
 
       // Get all users from Office 365
-      const office365Users = await this.getAllUsers();
+      const allOffice365Users = await this.getAllUsers();
+      console.log(`📥 Retrieved ${allOffice365Users.length} total users from Office 365`);
+
+      // Filter to only include real employees
+      const office365Users = await this.filterEmployeesByDomain(allOffice365Users);
       
       const results = {
-        totalUsers: office365Users.length,
+        totalUsers: allOffice365Users.length,
+        filteredUsers: office365Users.length,
+        excludedUsers: allOffice365Users.length - office365Users.length,
         newEmployees: 0,
         updatedEmployees: 0,
         errors: []

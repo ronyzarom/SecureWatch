@@ -529,6 +529,218 @@ router.get('/employees/status', async (req, res) => {
 
 /**
  * =================================
+ * AI-ENHANCED COMPLIANCE ENDPOINTS
+ * =================================
+ */
+
+// GET /api/compliance/ai/employees/:id/evaluate - AI-Enhanced compliance evaluation
+router.get('/ai/employees/:id/evaluate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { include_predictive = 'true' } = req.query;
+    
+    console.log(`🤖 AI-Enhanced compliance evaluation requested for employee ${id}`);
+
+    const aiComplianceResult = await complianceEngine.evaluateEmployeeComplianceWithAI(
+      parseInt(id), 
+      { 
+        includePredictive: include_predictive === 'true' 
+      }
+    );
+
+    res.json({
+      message: 'AI-enhanced compliance evaluation completed',
+      employee: {
+        id: parseInt(id),
+        name: aiComplianceResult.employeeName,
+        department: aiComplianceResult.department
+      },
+      evaluation: aiComplianceResult,
+      aiEnhanced: aiComplianceResult.aiEnhanced,
+      evaluatedAt: aiComplianceResult.enhancedAt || aiComplianceResult.evaluatedAt
+    });
+
+  } catch (error) {
+    console.error('Error in AI-enhanced compliance evaluation:', error);
+    res.status(500).json({ 
+      error: 'Failed to perform AI-enhanced compliance evaluation',
+      details: error.message,
+      aiEnhanced: false
+    });
+  }
+});
+
+// POST /api/compliance/ai/batch-evaluate - Batch AI-Enhanced compliance evaluation
+router.post('/ai/batch-evaluate', async (req, res) => {
+  try {
+    const { employee_ids, include_predictive = true, batch_size = 5 } = req.body;
+
+    if (!employee_ids || !Array.isArray(employee_ids)) {
+      return res.status(400).json({ 
+        error: 'employee_ids array is required' 
+      });
+    }
+
+    console.log(`🚀 Batch AI compliance evaluation for ${employee_ids.length} employees`);
+
+    const startTime = Date.now();
+    const batchResults = await complianceEngine.batchEvaluateComplianceWithAI(
+      employee_ids, 
+      { 
+        includePredictive: include_predictive,
+        batchSize: batch_size
+      }
+    );
+    const processingTime = Date.now() - startTime;
+
+    // Calculate summary statistics
+    const summary = {
+      totalEmployees: employee_ids.length,
+      successfulEvaluations: batchResults.filter(r => !r.error).length,
+      aiEnhancedEvaluations: batchResults.filter(r => r.aiEnhanced).length,
+      averageRiskScore: batchResults
+        .filter(r => r.intelligentRiskScore !== undefined)
+        .reduce((sum, r) => sum + r.intelligentRiskScore, 0) / 
+        Math.max(batchResults.filter(r => r.intelligentRiskScore !== undefined).length, 1),
+      highRiskEmployees: batchResults.filter(r => 
+        (r.intelligentRiskScore || r.overallRiskScore || 0) >= 70
+      ).length,
+      processingTimeMs: processingTime
+    };
+
+    res.json({
+      message: 'Batch AI-enhanced compliance evaluation completed',
+      summary,
+      results: batchResults,
+      processedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error in batch AI compliance evaluation:', error);
+    res.status(500).json({ 
+      error: 'Failed to perform batch AI compliance evaluation',
+      details: error.message 
+    });
+  }
+});
+
+// GET /api/compliance/ai/predictive-risks - Predictive compliance risk assessment
+router.get('/ai/predictive-risks', async (req, res) => {
+  try {
+    const { department } = req.query;
+
+    console.log(`🔮 Predictive compliance risk assessment${department ? ` for ${department} department` : ''}`);
+
+    const riskAssessment = await complianceEngine.predictComplianceRisks(department);
+
+    // Calculate additional insights
+    const insights = {
+      totalRiskScore: riskAssessment.riskAssessments.reduce(
+        (sum, assessment) => sum + assessment.currentRiskScore, 0
+      ),
+      averageRiskScore: riskAssessment.riskAssessments.length > 0 ?
+        riskAssessment.riskAssessments.reduce(
+          (sum, assessment) => sum + assessment.currentRiskScore, 0
+        ) / riskAssessment.riskAssessments.length : 0,
+      riskDistribution: {
+        critical: riskAssessment.riskAssessments.filter(a => a.currentRiskScore >= 80).length,
+        high: riskAssessment.riskAssessments.filter(a => a.currentRiskScore >= 60 && a.currentRiskScore < 80).length,
+        medium: riskAssessment.riskAssessments.filter(a => a.currentRiskScore >= 40 && a.currentRiskScore < 60).length,
+        low: riskAssessment.riskAssessments.filter(a => a.currentRiskScore < 40).length
+      },
+      departmentBreakdown: {}
+    };
+
+    // Calculate department-wise breakdown
+    riskAssessment.riskAssessments.forEach(assessment => {
+      const dept = assessment.department;
+      if (!insights.departmentBreakdown[dept]) {
+        insights.departmentBreakdown[dept] = { count: 0, totalRisk: 0 };
+      }
+      insights.departmentBreakdown[dept].count++;
+      insights.departmentBreakdown[dept].totalRisk += assessment.currentRiskScore;
+    });
+
+    // Calculate average risk per department
+    Object.keys(insights.departmentBreakdown).forEach(dept => {
+      const dept_data = insights.departmentBreakdown[dept];
+      dept_data.averageRisk = dept_data.totalRisk / dept_data.count;
+    });
+
+    res.json({
+      message: 'Predictive compliance risk assessment completed',
+      assessment: riskAssessment,
+      insights,
+      analyzedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error in predictive compliance risk assessment:', error);
+    res.status(500).json({ 
+      error: 'Failed to perform predictive compliance risk assessment',
+      details: error.message,
+      hint: 'Ensure AI compliance analysis is enabled'
+    });
+  }
+});
+
+// GET /api/compliance/ai/status - AI compliance analysis status and capabilities
+router.get('/ai/status', async (req, res) => {
+  try {
+    const aiStatus = {
+      enabled: complianceEngine.aiEnabled,
+      initialized: complianceEngine.aiAnalyzer?.initialized || false,
+      capabilities: {
+        behavioralAnalysis: complianceEngine.aiEnabled,
+        predictiveRisks: complianceEngine.aiEnabled,
+        contextualCompliance: complianceEngine.aiEnabled,
+        intelligentRecommendations: complianceEngine.aiEnabled
+      },
+      configuration: {
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        enabledByDefault: process.env.ENABLE_AI_COMPLIANCE !== 'false'
+      },
+      lastInitialized: complianceEngine.initialized ? new Date() : null
+    };
+
+    // Get usage statistics if available
+    try {
+      const usageStats = await pool.query(`
+        SELECT 
+          COUNT(*) as total_evaluations,
+          COUNT(CASE WHEN ai_enhanced = true THEN 1 END) as ai_enhanced_evaluations,
+          MAX(evaluated_at) as last_evaluation
+        FROM (
+          SELECT TRUE as ai_enhanced, NOW() as evaluated_at 
+          WHERE FALSE  -- Placeholder query
+        ) usage_log
+      `);
+
+      if (usageStats.rows[0]) {
+        aiStatus.usage = usageStats.rows[0];
+      }
+    } catch (statsError) {
+      // Stats query failed, continue without usage data
+      aiStatus.usage = null;
+    }
+
+    res.json({
+      message: 'AI compliance analysis status',
+      status: aiStatus,
+      checkedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error checking AI compliance status:', error);
+    res.status(500).json({ 
+      error: 'Failed to check AI compliance status',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * =================================
  * COMPLIANCE INCIDENTS ENDPOINTS
  * =================================
  */

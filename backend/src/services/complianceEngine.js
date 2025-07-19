@@ -2,9 +2,11 @@
  * SecureWatch Compliance Engine
  * Evaluates regulatory compliance and internal policy adherence
  * Handles GDPR, SOX, HIPAA, PCI DSS and custom organizational policies
+ * Enhanced with AI-powered behavioral analysis and predictive compliance assessment
  */
 
 const { pool } = require('../utils/database');
+const AIComplianceAnalyzer = require('./aiComplianceAnalyzer');
 
 class ComplianceEngine {
   constructor() {
@@ -12,6 +14,10 @@ class ComplianceEngine {
     this.activePolicies = new Map();
     this.complianceProfiles = new Map();
     this.initialized = false;
+    
+    // Initialize AI compliance analyzer
+    this.aiAnalyzer = new AIComplianceAnalyzer();
+    this.aiEnabled = process.env.ENABLE_AI_COMPLIANCE !== 'false'; // Default to enabled
   }
 
   /**
@@ -81,10 +87,25 @@ class ComplianceEngine {
       }
 
       this.initialized = true;
+      
+      // Initialize AI compliance analyzer if enabled
+      if (this.aiEnabled) {
+        try {
+          await this.aiAnalyzer.initialize();
+          console.log('🤖 AI Compliance Analysis: ENABLED');
+        } catch (error) {
+          console.warn('⚠️ AI Compliance Analysis disabled due to initialization error:', error.message);
+          this.aiEnabled = false;
+        }
+      } else {
+        console.log('🤖 AI Compliance Analysis: DISABLED');
+      }
+      
       console.log(`✅ Compliance Engine initialized:`);
       console.log(`   - ${this.activeRegulations.size} active regulations`);
       console.log(`   - ${this.activePolicies.size} active policies`);
       console.log(`   - ${this.complianceProfiles.size} compliance profiles`);
+      console.log(`   - AI Enhancement: ${this.aiEnabled ? 'ENABLED' : 'DISABLED'}`);
 
     } catch (error) {
       console.error('❌ Failed to initialize Compliance Engine:', error);
@@ -601,6 +622,305 @@ class ComplianceEngine {
       return match ? parseInt(match[1]) : 3;
     }
     return period || 3;
+  }
+
+  /**
+   * AI-Enhanced Compliance Evaluation
+   * Combines traditional rule-based evaluation with AI behavioral analysis
+   */
+  async evaluateEmployeeComplianceWithAI(employeeId, options = {}) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    try {
+      console.log(`🤖 Enhanced AI compliance evaluation for employee ${employeeId}...`);
+
+      // Get traditional compliance evaluation first
+      const traditionalCompliance = await this.evaluateEmployeeCompliance(employeeId);
+      
+      // If AI is enabled, enhance with AI analysis
+      if (this.aiEnabled) {
+        try {
+          const aiAnalysis = await this.aiAnalyzer.evaluateEmployeeComplianceWithAI(
+            employeeId, 
+            options.includePredictive !== false
+          );
+
+          // Combine traditional and AI analysis
+          const enhancedCompliance = {
+            ...traditionalCompliance,
+            aiEnhanced: true,
+            enhancedAt: new Date(),
+            
+            // AI-powered insights
+            intelligentRiskScore: aiAnalysis.intelligentRiskScore,
+            behavioralAnalysis: aiAnalysis.behavioralPatterns,
+            contextualViolations: aiAnalysis.contextualViolations,
+            predictiveRisks: aiAnalysis.predictiveRisks,
+            aiRecommendations: aiAnalysis.aiRecommendations,
+            aiConfidence: aiAnalysis.confidenceScore,
+            
+            // Enhanced overall assessment
+            enhancedOverallStatus: this.calculateEnhancedComplianceStatus(traditionalCompliance, aiAnalysis),
+            riskTrend: this.calculateRiskTrend(aiAnalysis),
+            priorityActions: this.getPriorityActions(aiAnalysis),
+            
+            // Compliance insights with AI context
+            regulationInsights: this.enhanceRegulationInsights(traditionalCompliance.regulations, aiAnalysis),
+            policyInsights: this.enhancePolicyInsights(traditionalCompliance.policies, aiAnalysis)
+          };
+
+          console.log(`✅ AI-Enhanced compliance evaluation complete: Traditional Risk + AI Risk = Enhanced Assessment`);
+          return enhancedCompliance;
+
+        } catch (aiError) {
+          console.warn('⚠️ AI analysis failed, returning traditional compliance only:', aiError.message);
+          return {
+            ...traditionalCompliance,
+            aiEnhanced: false,
+            aiError: aiError.message,
+            enhancedAt: new Date()
+          };
+        }
+      } else {
+        // AI disabled, return traditional with enhancement metadata
+        return {
+          ...traditionalCompliance,
+          aiEnhanced: false,
+          enhancedAt: new Date(),
+          aiDisabledReason: 'AI compliance analysis is disabled'
+        };
+      }
+
+    } catch (error) {
+      console.error(`❌ Enhanced compliance evaluation failed for employee ${employeeId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Batch AI-Enhanced Compliance Evaluation
+   * Efficiently process multiple employees with AI analysis
+   */
+  async batchEvaluateComplianceWithAI(employeeIds, options = {}) {
+    console.log(`🚀 Batch AI compliance evaluation for ${employeeIds.length} employees...`);
+    
+    const results = [];
+    const batchSize = options.batchSize || 5; // Process in batches to manage AI API limits
+    
+    for (let i = 0; i < employeeIds.length; i += batchSize) {
+      const batch = employeeIds.slice(i, i + batchSize);
+      
+      const batchPromises = batch.map(employeeId => 
+        this.evaluateEmployeeComplianceWithAI(employeeId, options)
+          .catch(error => ({
+            employeeId,
+            error: error.message,
+            aiEnhanced: false
+          }))
+      );
+      
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+      
+      // Small delay between batches to respect API limits
+      if (i + batchSize < employeeIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    console.log(`✅ Batch evaluation complete: ${results.filter(r => r.aiEnhanced).length}/${results.length} enhanced with AI`);
+    return results;
+  }
+
+  /**
+   * Predictive Compliance Risk Assessment
+   * Identify employees at risk of future violations
+   */
+  async predictComplianceRisks(departmentFilter = null) {
+    if (!this.aiEnabled) {
+      throw new Error('Predictive compliance analysis requires AI to be enabled');
+    }
+
+    console.log('🔮 Running predictive compliance risk assessment...');
+
+    try {
+      // Get all employees or filtered by department
+      let query = 'SELECT id, name, department, risk_score FROM employees WHERE is_active = true';
+      let queryParams = [];
+      
+      if (departmentFilter) {
+        query += ' AND department = $1';
+        queryParams.push(departmentFilter);
+      }
+      
+      const employeesResult = await pool.query(query, queryParams);
+      const employees = employeesResult.rows;
+
+      const riskAssessments = [];
+      
+      // Analyze subset of employees for predictive risks (limit for cost control)
+      const analysisLimit = Math.min(employees.length, 20);
+      const employeesToAnalyze = employees
+        .sort((a, b) => b.risk_score - a.risk_score) // Prioritize higher risk employees
+        .slice(0, analysisLimit);
+
+      for (const employee of employeesToAnalyze) {
+        try {
+          const aiAnalysis = await this.aiAnalyzer.evaluateEmployeeComplianceWithAI(employee.id, {
+            includePredictive: true
+          });
+
+          if (aiAnalysis.predictiveRisks.length > 0) {
+            riskAssessments.push({
+              employeeId: employee.id,
+              employeeName: employee.name,
+              department: employee.department,
+              currentRiskScore: employee.risk_score,
+              predictedRisks: aiAnalysis.predictiveRisks,
+              riskTrend: this.calculateRiskTrend(aiAnalysis),
+              recommendedActions: aiAnalysis.aiRecommendations.filter(r => r.priority === 'high'),
+              assessedAt: new Date()
+            });
+          }
+        } catch (error) {
+          console.warn(`Failed to assess predictive risk for employee ${employee.id}:`, error.message);
+        }
+      }
+
+      console.log(`🎯 Predictive assessment complete: ${riskAssessments.length} employees with predicted risks`);
+      return {
+        assessmentDate: new Date(),
+        totalEmployeesAnalyzed: employeesToAnalyze.length,
+        employeesWithPredictedRisks: riskAssessments.length,
+        riskAssessments: riskAssessments.sort((a, b) => b.currentRiskScore - a.currentRiskScore)
+      };
+
+    } catch (error) {
+      console.error('❌ Predictive compliance risk assessment failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper methods for AI-enhanced compliance
+   */
+  
+  calculateEnhancedComplianceStatus(traditionalCompliance, aiAnalysis) {
+    const traditionalStatusScore = this.getStatusScore(traditionalCompliance.overallStatus);
+    const aiRiskScore = aiAnalysis.intelligentRiskScore;
+    
+    // Combine traditional and AI scores
+    const enhancedScore = (traditionalStatusScore * 0.6) + (aiRiskScore * 0.4);
+    
+    if (enhancedScore >= 80) return 'critical_risk';
+    if (enhancedScore >= 60) return 'high_risk';
+    if (enhancedScore >= 40) return 'needs_attention';
+    if (enhancedScore >= 20) return 'compliant_with_risks';
+    return 'compliant';
+  }
+
+  getStatusScore(status) {
+    const scores = {
+      'non_compliant': 90,
+      'needs_review': 60,
+      'compliant': 10
+    };
+    return scores[status] || 50;
+  }
+
+  calculateRiskTrend(aiAnalysis) {
+    if (aiAnalysis.predictiveRisks.length > 2) return 'increasing';
+    if (aiAnalysis.predictiveRisks.length > 0) return 'stable_with_risks';
+    return 'improving';
+  }
+
+  getPriorityActions(aiAnalysis) {
+    return aiAnalysis.aiRecommendations
+      .filter(rec => rec.priority === 'high')
+      .slice(0, 3)
+      .map(rec => ({
+        action: rec.title,
+        category: rec.category,
+        timeline: rec.timeline
+      }));
+  }
+
+  enhanceRegulationInsights(traditionalRegulations, aiAnalysis) {
+    const enhanced = {};
+    
+    Object.keys(traditionalRegulations).forEach(regCode => {
+      enhanced[regCode] = {
+        ...traditionalRegulations[regCode],
+        aiInsights: aiAnalysis.complianceInsights.regulations?.[regCode] || null,
+        behavioralRisk: this.extractBehavioralRiskForRegulation(regCode, aiAnalysis),
+        contextualFactors: this.extractContextualFactors(regCode, aiAnalysis)
+      };
+    });
+    
+    return enhanced;
+  }
+
+  enhancePolicyInsights(traditionalPolicies, aiAnalysis) {
+    const enhanced = {};
+    
+    Object.keys(traditionalPolicies).forEach(policyCode => {
+      enhanced[policyCode] = {
+        ...traditionalPolicies[policyCode],
+        aiInsights: aiAnalysis.complianceInsights.policies?.[policyCode] || null,
+        behavioralCompliance: this.extractBehavioralCompliance(policyCode, aiAnalysis),
+        riskIndicators: this.extractRiskIndicators(policyCode, aiAnalysis)
+      };
+    });
+    
+    return enhanced;
+  }
+
+  extractBehavioralRiskForRegulation(regCode, aiAnalysis) {
+    // Extract relevant behavioral patterns for specific regulation
+    const patterns = aiAnalysis.behavioralPatterns;
+    
+    switch (regCode) {
+      case 'gdpr':
+        return {
+          dataAccessAnomalies: patterns.dataAccessPatterns?.gdprRelevant || [],
+          externalCommunication: patterns.communicationPatterns?.externalDataSharing || 0
+        };
+      case 'sox':
+        return {
+          financialDataAccess: patterns.dataAccessPatterns?.financialRelevant || [],
+          reportingPeriodActivity: patterns.temporalPatterns?.reportingPeriods || []
+        };
+      default:
+        return {};
+    }
+  }
+
+  extractContextualFactors(regCode, aiAnalysis) {
+    return aiAnalysis.contextualViolations
+      .filter(violation => violation.regulationRelevance?.includes(regCode))
+      .map(violation => violation.contextualFactors)
+      .flat();
+  }
+
+  extractBehavioralCompliance(policyCode, aiAnalysis) {
+    // Extract behavioral compliance indicators for specific policy
+    return {
+      adherenceScore: Math.max(0, 100 - (aiAnalysis.intelligentRiskScore * 0.8)),
+      behavioralIndicators: aiAnalysis.behavioralPatterns.keyInsights || [],
+      riskFactors: aiAnalysis.contextualViolations.length
+    };
+  }
+
+  extractRiskIndicators(policyCode, aiAnalysis) {
+    return aiAnalysis.contextualViolations
+      .filter(violation => violation.policyRelevance?.includes(policyCode))
+      .map(violation => ({
+        indicator: violation.type,
+        severity: violation.severity,
+        context: violation.contextualFactors
+      }));
   }
 
   /**

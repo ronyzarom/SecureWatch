@@ -78,17 +78,31 @@ class PolicyActionExecutor {
       `);
 
       if (result.rows.length === 0) {
-        return; // No pending executions
+        // No pending executions
+        return;
       }
 
       console.log(`📋 Processing ${result.rows.length} pending policy executions`);
 
+      // Process each execution
       for (const execution of result.rows) {
         await this.processExecution(execution);
       }
 
     } catch (error) {
-      console.error('❌ Error processing pending executions:', error);
+      // Handle database schema issues gracefully
+      if (error.code === '42P01') {
+        // Table doesn't exist
+        console.log('⚠️  Policy execution tables not yet created - skipping policy processing');
+        console.log('💡 Database schema needs to be initialized. Policy executor will retry later.');
+        return;
+      }
+      
+      // Log other errors but don't crash
+      console.error('❌ Error processing pending executions:', error.message);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Stack:', error.stack);
+      }
     }
   }
 

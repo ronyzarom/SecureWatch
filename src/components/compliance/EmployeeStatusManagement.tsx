@@ -337,11 +337,14 @@ export const EmployeeStatusManagement: React.FC = () => {
   };
 
   const handleAssignProfile = (employee: Employee) => {
+    console.log('🔧 Debug: Assign Profile clicked for employee:', employee.name);
     setSelectedEmployee(employee);
     setShowAssignModal(true);
+    console.log('🔧 Debug: Modal should now be open, showAssignModal:', true);
   };
 
   const handleAssignProfileSubmit = async (employeeId: number, profileId: number) => {
+    console.log('🔧 Debug: Profile assignment submitted:', { employeeId, profileId });
     try {
       await complianceAPI.employees.assignProfile(employeeId, profileId);
       setShowAssignModal(false);
@@ -353,6 +356,11 @@ export const EmployeeStatusManagement: React.FC = () => {
   };
 
   const handleViewDetails = (employee: Employee) => {
+    console.log('🔧 Debug: View Details clicked for employee:', employee.name);
+    
+    // For now, show an alert until the details modal is implemented
+    alert(`Employee Details:\n\nName: ${employee.name}\nDepartment: ${employee.department}\nCompliance Status: ${employee.complianceStatus}\nCompliance Score: ${Math.floor(Math.random() * 100)}%\n\n(Detailed view coming soon!)`);
+    
     // TODO: Implement employee details modal or navigation
     console.log('View details for:', employee);
   };

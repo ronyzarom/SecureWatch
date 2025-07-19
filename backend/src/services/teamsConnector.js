@@ -2,6 +2,7 @@ const { Client } = require('@microsoft/microsoft-graph-client');
 const { ConfidentialClientApplication } = require('@azure/msal-node');
 const { query } = require('../utils/database');
 const emailRiskAnalyzer = require('./emailRiskAnalyzer');
+const { syncComplianceAnalyzer } = require('./syncComplianceAnalyzer');
 
 /**
  * Microsoft Teams Connector Service
@@ -361,7 +362,7 @@ class TeamsConnector {
             
             for (const channel of channels) {
               try {
-                console.log(`📂 Processing channel: ${channel.displayName} in team ${team.displayName}`);
+                console.log(`�� Processing channel: ${channel.displayName} in team ${team.displayName}`);
 
                 // Get messages from this channel
                 const messages = await this.getChannelMessages(team.id, channel.id, {
@@ -379,6 +380,25 @@ class TeamsConnector {
                     
                     // Store in database
                     await this.storeTeamsMessage(message, team, channel, riskAnalysis);
+                    
+                    // 🆕 Queue employee for AI compliance analysis (sync-triggered)
+                    if (message.from?.user?.mail || message.from?.user?.userPrincipalName) {
+                      try {
+                        const userEmail = message.from.user.mail || message.from.user.userPrincipalName;
+                        
+                        // Find employee by email
+                        const employeeResult = await query(`
+                          SELECT id FROM employees WHERE email = $1
+                        `, [userEmail]);
+
+                        if (employeeResult.rows.length > 0) {
+                          const employeeId = employeeResult.rows[0].id;
+                          await syncComplianceAnalyzer.queueEmployeeForAnalysis(employeeId, 'teams_sync');
+                        }
+                      } catch (employeeError) {
+                        console.warn(`⚠️ Could not queue employee for compliance analysis: ${employeeError.message}`);
+                      }
+                    }
                     
                     processedMessages++;
                     

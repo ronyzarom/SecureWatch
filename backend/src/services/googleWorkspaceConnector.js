@@ -461,6 +461,23 @@ class GoogleWorkspaceConnector {
                 // Store in database
                 await this.storeGmailMessage(parsedMessage, riskAnalysis);
                 
+                // 🆕 Queue employee for AI compliance analysis (sync-triggered)
+                if (parsedMessage.from) {
+                  try {
+                    // Find employee by email
+                    const employeeResult = await query(`
+                      SELECT id FROM employees WHERE email = $1
+                    `, [parsedMessage.from]);
+
+                    if (employeeResult.rows.length > 0) {
+                      const employeeId = employeeResult.rows[0].id;
+                      await syncComplianceAnalyzer.queueEmployeeForAnalysis(employeeId, 'google_workspace_sync');
+                    }
+                  } catch (employeeError) {
+                    console.warn(`⚠️ Could not queue employee for compliance analysis: ${employeeError.message}`);
+                  }
+                }
+                
                 processedMessages++;
                 
                 if (riskAnalysis.isFlagged) {

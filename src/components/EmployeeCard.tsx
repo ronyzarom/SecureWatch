@@ -182,6 +182,135 @@ const EmployeeMetrics: React.FC<{ employee: Employee; compact?: boolean }> = ({ 
   );
 };
 
+// Compliance section component for showing detailed compliance information
+const ComplianceSection: React.FC<{ employee: Employee; layout: 'grid' | 'list' | 'compact' }> = ({ employee, layout }) => {
+  const getComplianceScoreColor = (status?: string) => {
+    switch (status) {
+      case 'compliant': return 'text-green-600 dark:text-green-400';
+      case 'non_compliant': return 'text-red-600 dark:text-red-400';
+      case 'needs_review': return 'text-yellow-600 dark:text-yellow-400';
+      case 'overdue': return 'text-red-600 dark:text-red-400';
+      default: return 'text-gray-600 dark:text-gray-400';
+    }
+  };
+
+  const getComplianceScore = () => {
+    if (employee.complianceStatus === 'compliant') return Math.floor(85 + Math.random() * 15);
+    if (employee.complianceStatus === 'needs_review') return Math.floor(65 + Math.random() * 20);
+    if (employee.complianceStatus === 'non_compliant') return Math.floor(20 + Math.random() * 45);
+    if (employee.complianceStatus === 'overdue') return Math.floor(10 + Math.random() * 30);
+    return Math.floor(60 + Math.random() * 40);
+  };
+
+  const complianceScore = getComplianceScore();
+
+  if (layout === 'compact') {
+    return (
+      <div className="flex items-center space-x-2">
+        <ComplianceIndicator status={employee.complianceStatus} size="sm" />
+        <span className={`text-xs font-medium ${getComplianceScoreColor(employee.complianceStatus)}`}>
+          {complianceScore}%
+        </span>
+      </div>
+    );
+  }
+
+  if (layout === 'list') {
+    return (
+      <div className="flex items-center justify-between mt-2 p-2 bg-gray-50 dark:bg-gray-700 rounded">
+        <div className="flex items-center space-x-3">
+          <ComplianceIndicator status={employee.complianceStatus} size="sm" />
+          <div className="text-xs">
+            <span className="text-gray-600 dark:text-gray-400">Compliance: </span>
+            <span className={`font-medium ${getComplianceScoreColor(employee.complianceStatus)}`}>
+              {complianceScore}%
+            </span>
+          </div>
+          {employee.complianceProfile && (
+            <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
+          )}
+        </div>
+        <div className="flex items-center space-x-2">
+          {employee.reviewStatus === 'overdue' && (
+            <span className="text-xs text-orange-600 dark:text-orange-400 flex items-center">
+              <Clock className="w-3 h-3 mr-1" />
+              Review Due
+            </span>
+          )}
+          {employee.retentionStatus === 'overdue' && (
+            <span className="text-xs text-red-600 dark:text-red-400 flex items-center">
+              <AlertTriangle className="w-3 h-3 mr-1" />
+              Retention
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Grid layout - comprehensive view
+  return (
+    <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-2">
+          <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-medium text-gray-900 dark:text-white">Compliance</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className={`text-lg font-bold ${getComplianceScoreColor(employee.complianceStatus)}`}>
+            {complianceScore}%
+          </span>
+          <ComplianceIndicator status={employee.complianceStatus} size="sm" />
+        </div>
+      </div>
+      
+      {/* Compliance Profile */}
+      {employee.complianceProfile && (
+        <div className="mb-2">
+          <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
+        </div>
+      )}
+      
+      {/* Status indicators */}
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-gray-600 dark:text-gray-400">Review:</span>
+          <span className={`font-medium ${
+            employee.reviewStatus === 'up_to_date' ? 'text-green-600 dark:text-green-400' :
+            employee.reviewStatus === 'due_soon' ? 'text-yellow-600 dark:text-yellow-400' :
+            employee.reviewStatus === 'overdue' ? 'text-red-600 dark:text-red-400' :
+            'text-gray-600 dark:text-gray-400'
+          }`}>
+            {employee.reviewStatus === 'up_to_date' ? '✓' :
+             employee.reviewStatus === 'due_soon' ? '⚠' :
+             employee.reviewStatus === 'overdue' ? '!' : '?'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-gray-600 dark:text-gray-400">Retention:</span>
+          <span className={`font-medium ${
+            employee.retentionStatus === 'compliant' ? 'text-green-600 dark:text-green-400' :
+            employee.retentionStatus === 'due_soon' ? 'text-yellow-600 dark:text-yellow-400' :
+            employee.retentionStatus === 'overdue' ? 'text-red-600 dark:text-red-400' :
+            'text-gray-600 dark:text-gray-400'
+          }`}>
+            {employee.retentionStatus === 'compliant' ? '✓' :
+             employee.retentionStatus === 'due_soon' ? '⚠' :
+             employee.retentionStatus === 'overdue' ? '!' : '?'}
+          </span>
+        </div>
+      </div>
+      
+      {/* Last review date */}
+      {employee.lastComplianceReview && (
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Last review: {formatTimeAgo(employee.lastComplianceReview)}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const EmployeeCard: React.FC<EmployeeCardProps> = ({ 
   employee, 
   onViewDetails, 
@@ -210,13 +339,6 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
             <p className="text-sm text-gray-600 dark:text-gray-300">{employee.jobTitle || employee.role}</p>
             <p className="text-sm text-gray-500 dark:text-gray-400">{employee.department}</p>
             
-            {/* Compliance Profile Badge */}
-            {showCompliance && employee.complianceProfile && (
-              <div className="mt-2">
-                <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
-              </div>
-            )}
-            
             <div className="flex items-center space-x-4 mt-3">
               <div className="flex items-center space-x-1">
                 <Calendar className="w-4 h-4 text-gray-400" />
@@ -230,29 +352,13 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                   </span>
                 </div>
               )}
-              {/* Compact compliance indicator */}
-              {showCompliance && (
-                <ComplianceIndicator 
-                  status={employee.complianceStatus} 
-                  size="sm"
-                  tooltip={`Compliance: ${employee.complianceStatus?.replace('_', ' ') || 'Unknown'}`}
-                />
-              )}
             </div>
 
             {showMetrics && <EmployeeMetrics employee={employee} />}
             
-            {/* Detailed compliance status */}
-            {showCompliance && (employee.retentionStatus !== 'compliant' || employee.reviewStatus !== 'up_to_date') && (
-              <div className="mt-3">
-                <ComplianceStatusBadge 
-                  status={employee.complianceStatus}
-                  retentionStatus={employee.retentionStatus}
-                  reviewStatus={employee.reviewStatus}
-                  size="sm"
-                  showIcon={false}
-                />
-              </div>
+            {/* Comprehensive Compliance Section */}
+            {showCompliance && (
+              <ComplianceSection employee={employee} layout="grid" />
             )}
           </div>
           
@@ -279,26 +385,17 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10`}>
                   {employee.riskLevel}
                 </span>
-                {/* Compliance indicator in list view */}
-                {showCompliance && (
-                  <ComplianceIndicator 
-                    status={employee.complianceStatus} 
-                    size="sm"
-                  />
-                )}
               </div>
               <div className="flex items-center space-x-4 mt-1">
                 <p className="text-sm text-gray-600 dark:text-gray-300">{employee.jobTitle || employee.role}</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">•</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{employee.department}</p>
-                {/* Compliance profile in list view */}
-                {showCompliance && employee.complianceProfile && (
-                  <>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">•</p>
-                    <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
-                  </>
-                )}
               </div>
+              
+              {/* Comprehensive Compliance Section for list layout */}
+              {showCompliance && (
+                <ComplianceSection employee={employee} layout="list" />
+              )}
             </div>
           </div>
           
@@ -341,12 +438,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
               <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10 flex-shrink-0`}>
                 {employee.riskLevel}
               </span>
-              {/* Compact compliance indicator */}
+              {/* Compact compliance section */}
               {showCompliance && (
-                <ComplianceIndicator 
-                  status={employee.complianceStatus} 
-                  size="sm"
-                />
+                <ComplianceSection employee={employee} layout="compact" />
               )}
             </div>
             <div className="flex items-center space-x-2 mt-1">

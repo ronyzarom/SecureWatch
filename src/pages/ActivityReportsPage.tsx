@@ -615,7 +615,7 @@ export const ActivityReportsPage: React.FC = () => {
                 📧 Email Volume Anomalies
               </h3>
               <div className="space-y-3">
-                {anomalies.emailAnomalies.map((anomaly) => (
+                {(anomalies.emailAnomalies || []).map((anomaly) => (
                   <div key={anomaly.id} className="flex items-center justify-between p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900 dark:text-white">
@@ -646,7 +646,7 @@ export const ActivityReportsPage: React.FC = () => {
                 🌙 After Hours Activity Anomalies
               </h3>
               <div className="space-y-3">
-                {anomalies.afterHoursAnomalies.map((anomaly) => (
+                {(anomalies.afterHoursAnomalies || []).map((anomaly) => (
                   <div key={anomaly.id} className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900 dark:text-white">
@@ -677,7 +677,7 @@ export const ActivityReportsPage: React.FC = () => {
                 ⚠️ Risk Score Spikes
               </h3>
               <div className="space-y-3">
-                {anomalies.riskAnomalies.map((anomaly) => (
+                {(anomalies.riskAnomalies || []).map((anomaly) => (
                   <div key={anomaly.id} className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900 dark:text-white">

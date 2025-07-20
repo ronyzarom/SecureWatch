@@ -138,7 +138,7 @@ export const EmailAnalytics: React.FC<EmailAnalyticsProps> = ({ onViewDetails, c
         <div>
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Top Risk Senders</h3>
           <div className="space-y-2">
-            {analytics.topRiskSenders.slice(0, 3).map((sender, index) => (
+            {(analytics.topRiskSenders || []).slice(0, 3).map((sender, index) => (
               <div key={index} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -172,19 +172,19 @@ export const EmailAnalytics: React.FC<EmailAnalyticsProps> = ({ onViewDetails, c
       )}
 
       {/* Recent Activity Trend */}
-      {analytics.volumeByDay.length > 0 && (
+      {(analytics.volumeByDay || []).length > 0 && (
         <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Recent Activity</h3>
             <TrendingUp className="w-4 h-4 text-gray-400" />
           </div>
           <div className="mt-2 flex items-center space-x-1">
-            {analytics.volumeByDay.slice(0, 7).reverse().map((day, index) => (
+            {(analytics.volumeByDay || []).slice(0, 7).reverse().map((day, index) => (
               <div
                 key={index}
                 className="flex-1 bg-blue-200 dark:bg-blue-700 rounded-sm"
                 style={{ 
-                  height: `${Math.max(4, (day.count / Math.max(...analytics.volumeByDay.map(d => d.count))) * 24)}px` 
+                  height: `${Math.max(4, (day.count / Math.max(...(analytics.volumeByDay || []).map(d => d.count))) * 24)}px` 
                 }}
                 title={`${day.count} emails on ${new Date(day.date).toLocaleDateString()}`}
               >

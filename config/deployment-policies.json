@@ -11,6 +11,14 @@
         "day": "Sunday",
         "time": "02:00-06:00",
         "timezone": "UTC"
+      },
+      "minor_release_policy": {
+        "adoption_strategy": "manual_approval_required",
+        "notification_advance": "14_days",
+        "rollout_delay": "60_days_after_release",
+        "requires_customer_approval": true,
+        "testing_period": "30_days",
+        "batch_deployment": false
       }
     },
     "standard": {
@@ -24,6 +32,15 @@
         "day": "Saturday",
         "time": "01:00-05:00",
         "timezone": "UTC"
+      },
+      "minor_release_policy": {
+        "adoption_strategy": "phased_automatic",
+        "notification_advance": "7_days",
+        "rollout_delay": "30_days_after_release",
+        "requires_customer_approval": false,
+        "testing_period": "14_days",
+        "batch_deployment": true,
+        "batch_size": "25_percent"
       }
     },
     "startup": {
@@ -37,6 +54,15 @@
         "day": "any",
         "time": "flexible",
         "timezone": "customer_preference"
+      },
+      "minor_release_policy": {
+        "adoption_strategy": "early_adopter",
+        "notification_advance": "3_days",
+        "rollout_delay": "7_days_after_release",
+        "requires_customer_approval": false,
+        "testing_period": "7_days",
+        "batch_deployment": true,
+        "batch_size": "50_percent"
       }
     },
     "demo": {
@@ -50,6 +76,14 @@
         "day": "any",
         "time": "any",
         "timezone": "UTC"
+      },
+      "minor_release_policy": {
+        "adoption_strategy": "immediate",
+        "notification_advance": "0_days",
+        "rollout_delay": "0_days",
+        "requires_customer_approval": false,
+        "testing_period": "1_day",
+        "batch_deployment": false
       }
     }
   },
@@ -68,7 +102,19 @@
       "support_level": "full",
       "end_of_life": null,
       "security_updates": true,
-      "feature_updates": true
+      "feature_updates": true,
+      "release_type": "minor",
+      "backward_compatible": true
+    },
+    "v1.2.0": {
+      "status": "development",
+      "release_date": "2024-06-15",
+      "support_level": "full",
+      "end_of_life": null,
+      "security_updates": true,
+      "feature_updates": true,
+      "release_type": "minor",
+      "backward_compatible": true
     },
     "main": {
       "status": "development",
@@ -101,5 +147,45 @@
       "requires_testing": false,
       "allowed_time_windows": ["any"]
     }
+  },
+  "minor_release_rules": {
+    "compatibility_requirements": {
+      "database_schema": "backward_compatible",
+      "api_endpoints": "backward_compatible",
+      "configuration_files": "additive_only",
+      "data_migrations": "reversible"
+    },
+    "testing_requirements": {
+      "unit_tests": "100_percent_pass",
+      "integration_tests": "100_percent_pass",
+      "performance_tests": "baseline_maintained",
+      "security_tests": "no_new_vulnerabilities"
+    },
+    "rollout_phases": [
+      {
+        "phase": "demo",
+        "duration": "1_day",
+        "customer_types": ["demo"],
+        "success_criteria": ["deployment_successful", "no_critical_errors"]
+      },
+      {
+        "phase": "startup_early_access",
+        "duration": "7_days",
+        "customer_types": ["startup"],
+        "success_criteria": ["customer_satisfaction", "performance_stable", "no_rollbacks"]
+      },
+      {
+        "phase": "standard_rollout",
+        "duration": "14_days",
+        "customer_types": ["standard"],
+        "success_criteria": ["batch_success_rate_95_percent", "minimal_support_tickets"]
+      },
+      {
+        "phase": "enterprise_rollout",
+        "duration": "30_days",
+        "customer_types": ["enterprise"],
+        "success_criteria": ["individual_approval", "zero_downtime", "customer_validation"]
+      }
+    ]
   }
 } 

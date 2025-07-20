@@ -11,11 +11,14 @@ const requireAuth = async (req, res, next) => {
       });
     }
 
-    // Get user details from database
-    const result = await query(
-      'SELECT id, email, name, role, department, is_active FROM users WHERE id = $1',
-      [req.session.userId]
-    );
+    // Get user details from database and link to employee record
+    const result = await query(`
+      SELECT u.id, u.email, u.name, u.role, u.department, u.is_active,
+             e.id as employee_id, e.compliance_profile_id, e.risk_score, e.risk_level
+      FROM users u
+      LEFT JOIN employees e ON u.email = e.email AND e.is_active = true
+      WHERE u.id = $1
+    `, [req.session.userId]);
 
     if (result.rows.length === 0) {
       // User not found, clear session

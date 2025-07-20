@@ -57,6 +57,8 @@ const notificationRoutes = require('./src/routes/notifications');
 console.log('   ✅ Notification routes loaded');
 const complianceRoutes = require('./src/routes/compliance');
 console.log('   ✅ Compliance routes loaded');
+const trainingRoutes = require('./src/routes/training');
+console.log('   ✅ Training routes loaded');
 
 // Import services
 console.log('🔧 Loading services...');
@@ -228,7 +230,9 @@ console.log('   ✅ /api/mfa routes registered');
 app.use('/api/notifications', notificationRoutes);
 console.log('   ✅ /api/notifications routes registered');
 app.use('/api/compliance', complianceRoutes);
+app.use('/api/training', trainingRoutes);
 console.log('   ✅ /api/compliance routes registered');
+console.log('   ✅ /api/training routes registered');
 
 // Static file serving for frontend
 console.log('🌐 Configuring static file serving...');

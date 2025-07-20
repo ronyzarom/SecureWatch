@@ -14,7 +14,9 @@ import {
   Database,
   AlertTriangle,
   TrendingUp,
-  Shield
+  Shield,
+  BookOpen,
+  User
 } from 'lucide-react';
 import SecureWatchLogoPng from '../assets/SecureWatchLogo.png';
 
@@ -84,6 +86,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Compliance',
       icon: Shield,
       page: 'compliance'
+    },
+    {
+      id: 'training-management',
+      label: 'Training Management',
+      icon: BookOpen,
+      page: 'training-management'
     },
     {
       id: 'activity-reports',

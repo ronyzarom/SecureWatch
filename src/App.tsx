@@ -24,6 +24,7 @@ import { CategoriesPage } from './pages/CategoriesPage';
 import { ViolationsPage } from './pages/ViolationsPage';
 import { ActivityReportsPage } from './pages/ActivityReportsPage';
 import CompliancePage from './pages/CompliancePage';
+import TrainingManagementPage from './pages/TrainingManagementPage';
 // Mock data imports removed - now using real API data
 import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';
@@ -248,6 +249,8 @@ function App() {
         return <ActivityReportsPage />;
       case 'compliance':
         return <CompliancePage />;
+      case 'training-management':
+        return <TrainingManagementPage />;
       case 'settings-email':
         return <SettingsEmailPage />;
       case 'settings-company':

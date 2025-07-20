@@ -1,0 +1,198 @@
+{
+  "render_configuration": {
+    "deployment_strategy": "tag_based_with_environment_promotion",
+    "api_endpoint": "https://api.render.com/v1",
+    "deployment_regions": ["us-west-2", "us-east-1"],
+    "service_naming_convention": "securewatch-{customer-slug}-{service-type}",
+    "auto_deploy_settings": {
+      "demo_environment": {
+        "auto_deploy": true,
+        "branch": "main",
+        "deploy_on_tag": true,
+        "preview_deployments": true
+      },
+      "production_environment": {
+        "auto_deploy": false,
+        "branch": null,
+        "deploy_on_tag": true,
+        "manual_promotion_required": true
+      }
+    }
+  },
+  "customer_service_templates": {
+    "backend_service": {
+      "type": "web_service",
+      "runtime": "node",
+      "build_command": "npm install && npm run build",
+      "start_command": "npm start",
+      "environment_variables": [
+        "NODE_ENV",
+        "DATABASE_URL", 
+        "JWT_SECRET",
+        "CUSTOMER_SLUG",
+        "VERSION_TAG"
+      ],
+      "health_check_path": "/health",
+      "autoscaling": {
+        "min_instances": 1,
+        "max_instances": 10,
+        "target_cpu": 70
+      }
+    },
+    "frontend_service": {
+      "type": "static_site",
+      "build_command": "npm install && npm run build",
+      "publish_directory": "dist",
+      "environment_variables": [
+        "VITE_API_URL",
+        "VITE_CUSTOMER_SLUG",
+        "VITE_VERSION_TAG"
+      ],
+      "custom_domains": true,
+      "cdn_enabled": true
+    }
+  },
+  "deployment_phases": {
+    "demo": {
+      "render_environment": "demo",
+      "deployment_method": "immediate_auto_deploy",
+      "rollback_method": "git_revert",
+      "monitoring_duration": "1_hour",
+      "services_to_deploy": ["demo-backend", "demo-frontend"]
+    },
+    "startup_early_access": {
+      "render_environment": "production",
+      "deployment_method": "manual_trigger_with_tag",
+      "rollback_method": "previous_deployment",
+      "monitoring_duration": "24_hours",
+      "batch_configuration": {
+        "batch_size": "50_percent",
+        "batch_delay": "2_hours",
+        "health_check_delay": "10_minutes"
+      }
+    },
+    "standard_rollout": {
+      "render_environment": "production", 
+      "deployment_method": "manual_trigger_with_tag",
+      "rollback_method": "previous_deployment",
+      "monitoring_duration": "48_hours",
+      "batch_configuration": {
+        "batch_size": "25_percent",
+        "batch_delay": "6_hours",
+        "health_check_delay": "30_minutes"
+      }
+    },
+    "enterprise_rollout": {
+      "render_environment": "production",
+      "deployment_method": "scheduled_manual_with_approval",
+      "rollback_method": "snapshot_restore",
+      "monitoring_duration": "72_hours",
+      "batch_configuration": {
+        "batch_size": "individual",
+        "batch_delay": "maintenance_window",
+        "health_check_delay": "60_minutes"
+      }
+    }
+  },
+  "render_api_operations": {
+    "deployment_triggers": {
+      "create_deployment": "POST /services/{service_id}/deploys",
+      "get_deployment_status": "GET /services/{service_id}/deploys/{deploy_id}",
+      "rollback_deployment": "POST /services/{service_id}/deploys/{deploy_id}/rollback"
+    },
+    "service_management": {
+      "list_services": "GET /services",
+      "get_service": "GET /services/{service_id}",
+      "update_service": "PATCH /services/{service_id}",
+      "suspend_service": "POST /services/{service_id}/suspend",
+      "resume_service": "POST /services/{service_id}/resume"
+    },
+    "environment_variables": {
+      "list_env_vars": "GET /services/{service_id}/env-vars",
+      "create_env_var": "POST /services/{service_id}/env-vars",
+      "update_env_var": "PUT /services/{service_id}/env-vars/{key}",
+      "delete_env_var": "DELETE /services/{service_id}/env-vars/{key}"
+    }
+  },
+  "health_monitoring": {
+    "endpoints": {
+      "backend_health": "/api/health",
+      "database_health": "/api/health/database",
+      "version_info": "/api/version"
+    },
+    "success_criteria": {
+      "response_time": "< 2000ms",
+      "error_rate": "< 1%",
+      "availability": "> 99.9%"
+    },
+    "monitoring_tools": {
+      "render_metrics": true,
+      "custom_health_checks": true,
+      "external_monitoring": "optional"
+    }
+  },
+  "rollback_procedures": {
+    "automatic_triggers": {
+      "health_check_failures": 3,
+      "error_rate_threshold": "5%",
+      "response_time_threshold": "5000ms"
+    },
+    "rollback_methods": {
+      "immediate": "render_api_rollback",
+      "database": "restore_from_backup",
+      "full_service": "previous_deployment_restore"
+    },
+    "notification_channels": {
+      "slack_webhook": "optional",
+      "email_alerts": "required",
+      "customer_notification": "conditional"
+    }
+  },
+  "customer_environment_mapping": {
+    "acme-corp": {
+      "backend_service_id": "srv-acme-backend-abc123",
+      "frontend_service_id": "srv-acme-frontend-def456",
+      "database_url": "${ACME_DATABASE_URL}",
+      "custom_domain": "acme.securewatch.app",
+      "deployment_policy": "standard"
+    },
+    "techstart": {
+      "backend_service_id": "srv-techstart-backend-ghi789",
+      "frontend_service_id": "srv-techstart-frontend-jkl012", 
+      "database_url": "${TECHSTART_DATABASE_URL}",
+      "custom_domain": "techstart.securewatch.app",
+      "deployment_policy": "startup"
+    },
+    "medhealth": {
+      "backend_service_id": "srv-medhealth-backend-mno345",
+      "frontend_service_id": "srv-medhealth-frontend-pqr678",
+      "database_url": "${MEDHEALTH_DATABASE_URL}",
+      "custom_domain": "medhealth.securewatch.app", 
+      "deployment_policy": "enterprise"
+    },
+    "financefirst": {
+      "backend_service_id": "srv-finance-backend-stu901",
+      "frontend_service_id": "srv-finance-frontend-vwx234",
+      "database_url": "${FINANCE_DATABASE_URL}",
+      "custom_domain": "finance.securewatch.app",
+      "deployment_policy": "enterprise"
+    }
+  },
+  "environment_variable_templates": {
+    "backend_env_vars": {
+      "NODE_ENV": "production",
+      "VERSION_TAG": "${DEPLOYMENT_VERSION}",
+      "CUSTOMER_SLUG": "${CUSTOMER_SLUG}",
+      "DATABASE_URL": "${CUSTOMER_DATABASE_URL}",
+      "JWT_SECRET": "${CUSTOMER_JWT_SECRET}",
+      "RENDER_SERVICE_ID": "${RENDER_SERVICE_ID}",
+      "DEPLOYMENT_PHASE": "${DEPLOYMENT_PHASE}"
+    },
+    "frontend_env_vars": {
+      "VITE_API_URL": "https://${CUSTOMER_SLUG}-api.securewatch.app",
+      "VITE_VERSION_TAG": "${DEPLOYMENT_VERSION}",
+      "VITE_CUSTOMER_SLUG": "${CUSTOMER_SLUG}",
+      "VITE_ENVIRONMENT": "production"
+    }
+  }
+} 

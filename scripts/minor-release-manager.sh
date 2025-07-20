@@ -442,28 +442,94 @@ deploy_customers() {
     fi
   fi
   
-  # Deploy to each customer
+  # Deploy to each customer using Render integration
   local success_count=0
   local failure_count=0
   
   for customer in "${customers[@]}"; do
     log_info "Deploying to: $customer"
     
+    # Get customer slug from customer name
+    local customer_slug=$(jq -r --arg name "$customer" '.customers[] | select(.name == $name) | .slug' "$CUSTOMERS_FILE")
+    
+    if [[ -z "$customer_slug" || "$customer_slug" == "null" ]]; then
+      log_warning "Customer slug not found for: $customer"
+      failure_count=$((failure_count + 1))
+      continue
+    fi
+    
     if $DRY_RUN; then
-      log_info "[DRY RUN] Would deploy $MINOR_VERSION to $customer"
+      log_info "[DRY RUN] Would deploy $MINOR_VERSION to $customer ($customer_slug) using Render"
       success_count=$((success_count + 1))
     else
-      if "$PROJECT_ROOT/scripts/update-customer.sh" --version "$MINOR_VERSION" --customer "$customer"; then
-        log_success "Successfully deployed to $customer"
+      # Use Render deployment script for actual deployment
+      local render_deploy_args=()
+      render_deploy_args+=("--version" "$MINOR_VERSION")
+      render_deploy_args+=("--customer" "$customer_slug")
+      
+      # Check if RENDER_API_KEY is available
+      if [[ -n "${RENDER_API_KEY:-}" ]]; then
+        render_deploy_args+=("--api-key" "$RENDER_API_KEY")
+      fi
+      
+      log_info "Deploying via Render: $customer_slug"
+      
+      if "$PROJECT_ROOT/scripts/render-deploy.sh" deploy-customer "${render_deploy_args[@]}"; then
+        log_success "Successfully deployed to $customer via Render"
         success_count=$((success_count + 1))
+        
+        # Update release plan with successful deployment
+        local plan_file="release-plans/minor-release-${MINOR_VERSION}.json"
+        if [[ -f "$plan_file" ]]; then
+          local temp_plan=$(mktemp)
+          local phase_key=""
+          
+          # Determine phase key based on customer policy
+          local policy=$(get_customer_policy "$customer")
+          case "$policy" in
+            "demo") phase_key="demo" ;;
+            "startup") phase_key="startup" ;;
+            "standard") phase_key="standard" ;;
+            "enterprise") phase_key="enterprise" ;;
+          esac
+          
+          if [[ -n "$phase_key" ]]; then
+            jq --arg phase "$phase_key" --arg customer "$customer" --arg date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+              '.deployment_tracking[$phase] += [{"customer": $customer, "deployed_at": $date, "status": "success"}]' \
+              "$plan_file" > "$temp_plan" && mv "$temp_plan" "$plan_file"
+          fi
+        fi
+        
       else
-        log_error "Failed to deploy to $customer"
+        log_error "Failed to deploy to $customer via Render"
         failure_count=$((failure_count + 1))
+        
+        # Update release plan with failed deployment
+        local plan_file="release-plans/minor-release-${MINOR_VERSION}.json"
+        if [[ -f "$plan_file" ]]; then
+          local temp_plan=$(mktemp)
+          local phase_key=""
+          
+          # Determine phase key based on customer policy
+          local policy=$(get_customer_policy "$customer")
+          case "$policy" in
+            "demo") phase_key="demo" ;;
+            "startup") phase_key="startup" ;;
+            "standard") phase_key="standard" ;;
+            "enterprise") phase_key="enterprise" ;;
+          esac
+          
+          if [[ -n "$phase_key" ]]; then
+            jq --arg phase "$phase_key" --arg customer "$customer" --arg date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+              '.deployment_tracking[$phase] += [{"customer": $customer, "deployed_at": $date, "status": "failed"}]' \
+              "$plan_file" > "$temp_plan" && mv "$temp_plan" "$plan_file"
+          fi
+        fi
       fi
     fi
     
-    # Brief pause between deployments
-    sleep 2
+    # Brief pause between deployments for stability
+    sleep 5
   done
   
   echo ""
@@ -475,8 +541,9 @@ deploy_customers() {
   
   if [[ $failure_count -gt 0 ]]; then
     log_warning "Some deployments failed. Check logs and retry failed customers."
+    log_info "Retry command: $0 deploy-customers --version $MINOR_VERSION --customers \"$(printf '%s,' "${customers[@]}" | sed 's/,$//')\""
   else
-    log_success "All deployments completed successfully!"
+    log_success "All deployments completed successfully via Render!"
   fi
 }
 

@@ -1,20 +1,32 @@
 {
   "customer": {
-    "name": "ACME Corporation",
-    "slug": "acme-corp",
+    "name": "Customer Name",
+    "slug": "customer-slug",
     "industry": "technology",
     "size": "midsize",
-    "domain": "acme.com",
+    "domain": "customer.com",
     "contact": {
-      "primary_email": "admin@acme.com",
-      "primary_name": "John Smith",
+      "primary_email": "admin@customer.com",
+      "primary_name": "Administrator Name",
       "phone": "+1-555-0123"
     }
   },
+  "deployment": {
+    "policy": "standard",
+    "source": "stable_tags_only",
+    "target_version": "v1.0.0",
+    "environment": "production",
+    "auto_update": true,
+    "maintenance_window": {
+      "day": "Saturday",
+      "time": "01:00-05:00",
+      "timezone": "UTC"
+    }
+  },
   "database": {
-    "host": "acme-db.render.com",
-    "name": "securewatch_acme",
-    "user": "acme_user",
+    "host": "customer-db.render.com",
+    "name": "securewatch_customer",
+    "user": "customer_user",
     "password": "secure_password_here",
     "port": 5432
   },
@@ -23,9 +35,9 @@
     "region": "us-west-2"
   },
   "admin": {
-    "email": "admin@acme.com",
-    "name": "ACME Administrator",
-    "password": "change_this_password"
+    "email": "admin@customer.com",
+    "name": "Administrator Name",
+    "password": "auto_generated_if_empty"
   },
   "seeding": {
     "include_sample_data": true,
@@ -39,10 +51,10 @@
     "custom_requirements": []
   },
   "branding": {
-    "logo_url": "/assets/customers/acme/logo.png",
+    "logo_url": "/assets/customers/customer/logo.png",
     "primary_color": "#0066cc",
     "secondary_color": "#004499",
-    "company_name": "ACME Corporation"
+    "company_name": "Customer Name"
   },
   "features": {
     "training_management": true,
@@ -55,5 +67,38 @@
     "email_alerts": true,
     "slack_webhook": "",
     "sms_alerts": false
+  },
+  "deployment_options": {
+    "available_policies": [
+      {
+        "name": "enterprise",
+        "description": "Maximum stability, manual updates only",
+        "suitable_for": "Large enterprises, healthcare, finance",
+        "auto_update": false,
+        "deployment_source": "stable_tags_only",
+        "rollback_window": "24_hours"
+      },
+      {
+        "name": "standard", 
+        "description": "Balanced stability and features",
+        "suitable_for": "Mid-size companies, standard business",
+        "auto_update": true,
+        "deployment_source": "stable_tags_only", 
+        "rollback_window": "12_hours"
+      },
+      {
+        "name": "startup",
+        "description": "Latest features, faster updates",
+        "suitable_for": "Startups, tech companies",
+        "auto_update": true,
+        "deployment_source": "latest_stable_tag",
+        "rollback_window": "6_hours"
+      }
+    ],
+    "version_selection_guide": {
+      "v1.0.0": "Stable production release - recommended for all customers",
+      "latest_stable": "Most recent stable version - good for startup policy",
+      "main_branch": "Development version - only for demo environments"
+    }
   }
 } 

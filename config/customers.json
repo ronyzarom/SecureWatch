@@ -5,33 +5,53 @@
       "slug": "acme-corp",
       "industry": "technology",
       "size": "midsize",
+      "current_version": "v1.0.0",
+      "target_version": "v1.0.0",
+      "deployment_policy": "standard",
+      "deployment_source": "stable_tags_only",
       "database_url": "postgresql://acme_user:password@acme-db.render.com:5432/securewatch_acme",
       "render_services": {
         "backend": "srv-acme-backend-abc123",
         "frontend": "srv-acme-frontend-def456"
       },
-      "current_version": "v1.0.0",
       "setup_date": "2024-01-15",
+      "last_updated": "2024-03-15",
+      "auto_update": true,
       "contact": {
         "email": "admin@acme.com",
         "name": "John Smith"
+      },
+      "maintenance_window": {
+        "day": "Saturday",
+        "time": "01:00-05:00",
+        "timezone": "UTC"
       }
     },
     {
       "name": "TechStart Inc",
       "slug": "techstart",
-      "industry": "technology",
+      "industry": "technology", 
       "size": "startup",
+      "current_version": "v1.0.0",
+      "target_version": "latest_stable",
+      "deployment_policy": "startup",
+      "deployment_source": "latest_stable_tag",
       "database_url": "postgresql://techstart_user:password@techstart-db.render.com:5432/securewatch_techstart",
       "render_services": {
         "backend": "srv-techstart-backend-ghi789",
         "frontend": "srv-techstart-frontend-jkl012"
       },
-      "current_version": "v1.0.0",
       "setup_date": "2024-02-01",
+      "last_updated": "2024-03-15",
+      "auto_update": true,
       "contact": {
         "email": "cto@techstart.com",
         "name": "Sarah Johnson"
+      },
+      "maintenance_window": {
+        "day": "any",
+        "time": "flexible",
+        "timezone": "customer_preference"
       }
     },
     {
@@ -39,16 +59,26 @@
       "slug": "medhealth",
       "industry": "healthcare",
       "size": "midsize",
+      "current_version": "v0.9.0",
+      "target_version": "v1.0.0",
+      "deployment_policy": "enterprise",
+      "deployment_source": "stable_tags_only",
       "database_url": "postgresql://medhealth_user:password@medhealth-db.render.com:5432/securewatch_medhealth",
       "render_services": {
         "backend": "srv-medhealth-backend-mno345",
         "frontend": "srv-medhealth-frontend-pqr678"
       },
-      "current_version": "v0.9.0",
       "setup_date": "2024-01-20",
+      "last_updated": "2024-02-10",
+      "auto_update": false,
       "contact": {
         "email": "it@medhealth.com",
         "name": "Dr. Michael Chen"
+      },
+      "maintenance_window": {
+        "day": "Sunday",
+        "time": "02:00-06:00",
+        "timezone": "UTC"
       }
     },
     {
@@ -56,22 +86,57 @@
       "slug": "financefirst",
       "industry": "finance",
       "size": "enterprise",
+      "current_version": "v1.0.0",
+      "target_version": "v1.0.0",
+      "deployment_policy": "enterprise",
+      "deployment_source": "stable_tags_only",
       "database_url": "postgresql://finance_user:password@finance-db.render.com:5432/securewatch_finance",
       "render_services": {
         "backend": "srv-finance-backend-stu901",
         "frontend": "srv-finance-frontend-vwx234"
       },
-      "current_version": "v1.0.0",
       "setup_date": "2023-12-10",
+      "last_updated": "2024-03-15",
+      "auto_update": false,
       "contact": {
         "email": "security@financefirst.com",
         "name": "Robert Williams"
+      },
+      "maintenance_window": {
+        "day": "Sunday",
+        "time": "02:00-06:00",
+        "timezone": "UTC"
       }
     }
   ],
   "metadata": {
     "last_updated": "2024-03-15T10:30:00Z",
     "total_customers": 4,
-    "latest_version": "v1.0.0"
+    "latest_version": "v1.0.0",
+    "next_planned_version": "v1.1.0",
+    "deployment_strategy": "tag_based_production",
+    "supported_versions": ["v1.0.0"],
+    "deprecated_versions": ["v0.9.0"],
+    "version_distribution": {
+      "v1.0.0": 3,
+      "v0.9.0": 1
+    }
+  },
+  "deployment_environments": {
+    "production": {
+      "allowed_policies": ["enterprise", "standard", "startup"],
+      "default_source": "stable_tags_only",
+      "requires_approval": true
+    },
+    "staging": {
+      "allowed_policies": ["all"],
+      "default_source": "latest_stable_tag",
+      "requires_approval": false
+    },
+    "demo": {
+      "allowed_policies": ["demo"],
+      "default_source": "main_branch",
+      "requires_approval": false
+    }
   }
 }

@@ -1,0 +1,105 @@
+{
+  "deployment_policies": {
+    "enterprise": {
+      "description": "Enterprise customers with maximum stability requirements",
+      "deployment_source": "stable_tags_only",
+      "auto_update": false,
+      "supported_versions": ["v1.0.0"],
+      "minimum_testing_period": "14_days",
+      "rollback_window": "24_hours",
+      "maintenance_window": {
+        "day": "Sunday",
+        "time": "02:00-06:00",
+        "timezone": "UTC"
+      }
+    },
+    "standard": {
+      "description": "Standard customers with balanced stability and features",
+      "deployment_source": "stable_tags_only",
+      "auto_update": true,
+      "supported_versions": ["v1.0.0", "v1.1.0"],
+      "minimum_testing_period": "7_days",
+      "rollback_window": "12_hours",
+      "maintenance_window": {
+        "day": "Saturday",
+        "time": "01:00-05:00",
+        "timezone": "UTC"
+      }
+    },
+    "startup": {
+      "description": "Startup customers wanting latest features",
+      "deployment_source": "latest_stable_tag",
+      "auto_update": true,
+      "supported_versions": ["v1.0.0", "v1.1.0", "latest"],
+      "minimum_testing_period": "3_days",
+      "rollback_window": "6_hours",
+      "maintenance_window": {
+        "day": "any",
+        "time": "flexible",
+        "timezone": "customer_preference"
+      }
+    },
+    "demo": {
+      "description": "Demo and trial environments",
+      "deployment_source": "main_branch",
+      "auto_update": true,
+      "supported_versions": ["main", "latest", "v1.0.0"],
+      "minimum_testing_period": "1_day",
+      "rollback_window": "2_hours",
+      "maintenance_window": {
+        "day": "any",
+        "time": "any",
+        "timezone": "UTC"
+      }
+    }
+  },
+  "version_lifecycle": {
+    "v1.0.0": {
+      "status": "stable",
+      "release_date": "2024-03-15",
+      "support_level": "full",
+      "end_of_life": null,
+      "security_updates": true,
+      "feature_updates": false
+    },
+    "v1.1.0": {
+      "status": "planned",
+      "release_date": "2024-04-15",
+      "support_level": "full",
+      "end_of_life": null,
+      "security_updates": true,
+      "feature_updates": true
+    },
+    "main": {
+      "status": "development",
+      "release_date": "continuous",
+      "support_level": "experimental",
+      "end_of_life": null,
+      "security_updates": false,
+      "feature_updates": true
+    }
+  },
+  "deployment_rules": {
+    "production": {
+      "allowed_sources": ["stable_tags_only"],
+      "requires_backup": true,
+      "requires_approval": true,
+      "requires_testing": true,
+      "allowed_time_windows": ["maintenance_window"]
+    },
+    "staging": {
+      "allowed_sources": ["stable_tags_only", "latest_stable_tag", "main_branch"],
+      "requires_backup": true,
+      "requires_approval": false,
+      "requires_testing": false,
+      "allowed_time_windows": ["any"]
+    },
+    "demo": {
+      "allowed_sources": ["main_branch", "latest_stable_tag"],
+      "requires_backup": false,
+      "requires_approval": false,
+      "requires_testing": false,
+      "allowed_time_windows": ["any"]
+    }
+  }
+} 

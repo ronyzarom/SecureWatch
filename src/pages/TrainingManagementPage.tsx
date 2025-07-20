@@ -616,7 +616,7 @@ By completing this training, you will be able to:
       if (contentRes.ok) {
         const contentData = await contentRes.json();
         // Add sample content for items missing content_data
-        const enrichedContent = (contentData.content || []).map(item => ({
+        const enrichedContent = (contentData.content || []).map((item: TrainingContent) => ({
           ...item,
           content_data: item.content_data || getSampleContent(item.title, item.content_type)
         }));
@@ -1195,7 +1195,7 @@ By completing this training, you will be able to:
     const matchesSearch = program.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          program.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRegulation = filterRegulation === 'all' || 
-                              program.applicable_regulations.includes(filterRegulation);
+                              (program.applicable_regulations || []).includes(filterRegulation);
     const matchesStatus = filterStatus === 'all' ||
                          (filterStatus === 'active' && program.is_active) ||
                          (filterStatus === 'inactive' && !program.is_active) ||
@@ -1207,7 +1207,7 @@ By completing this training, you will be able to:
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRegulation = filterRegulation === 'all' ||
-                             item.applicable_regulations.includes(filterRegulation);
+                             (item.applicable_regulations || []).includes(filterRegulation);
     const matchesType = !contentTypeFilter || item.content_type === contentTypeFilter;
     const matchesStatus = !contentStatusFilter || item.status === contentStatusFilter;
     return matchesSearch && matchesRegulation && matchesType && matchesStatus;
@@ -1474,7 +1474,7 @@ By completing this training, you will be able to:
                     </div>
 
                     <div className="flex flex-wrap gap-1">
-                      {program.applicable_regulations.map((reg) => (
+                      {(program.applicable_regulations || []).map((reg) => (
                         <RegulationBadge key={reg} regulation={reg} />
                       ))}
                     </div>
@@ -1689,7 +1689,7 @@ By completing this training, you will be able to:
                       </div>
 
                       <div className="flex flex-wrap gap-1">
-                        {item.applicable_regulations.map((reg) => (
+                        {(item.applicable_regulations || []).map((reg) => (
                           <span key={reg} className={`px-2 py-1 rounded-full text-xs font-medium ${getRegulationColor(reg)}`}>
                             {getRegulationIcon(reg)} {reg.toUpperCase()}
                           </span>

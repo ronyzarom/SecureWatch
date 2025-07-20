@@ -219,7 +219,7 @@ export const PoliciesPage: React.FC = () => {
         const data = await response.json();
         // Extract unique departments with their names as both id and name
         // This matches the backend expectation where department name is used as identifier
-        const uniqueDepts = [...new Set(data.employees.map((emp: any) => emp.department))]
+        const uniqueDepts = [...new Set((data.employees || []).map((emp: any) => emp.department))]
           .filter(dept => dept)
           .map((dept) => ({ id: dept, name: dept }));
         setDepartments(uniqueDepts);
@@ -235,7 +235,7 @@ export const PoliciesPage: React.FC = () => {
       const response = await fetch('/api/users', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
-        setUsers(data.users.map((user: any) => ({
+        setUsers((data.users || []).map((user: any) => ({
           id: user.email, // Use email as the identifier
           name: user.name,
           email: user.email

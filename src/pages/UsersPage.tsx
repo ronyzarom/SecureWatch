@@ -41,7 +41,7 @@ export const UsersPage: React.FC = () => {
         const response = await userAPI.getAll();
         
         // Transform backend data to match frontend interface
-        const transformedUsers: SystemUser[] = response.users.map((user: any) => ({
+        const transformedUsers: SystemUser[] = (response.users || []).map((user: any) => ({
           id: user.id.toString(),
           name: user.name,
           email: user.email,
@@ -143,7 +143,7 @@ export const UsersPage: React.FC = () => {
 
       // Refresh users list
       const response = await userAPI.getAll();
-      const transformedUsers: SystemUser[] = response.users.map((user: any) => ({
+      const transformedUsers: SystemUser[] = (response.users || []).map((user: any) => ({
         id: user.id.toString(),
         name: user.name,
         email: user.email,

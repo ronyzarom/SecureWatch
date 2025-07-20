@@ -1,0 +1,77 @@
+{
+  "customer": {
+    "name": "ABC SecureWatch",
+    "slug": "abc-sw",
+    "industry": "technology",
+    "size": "standard",
+    "domain": "abc-sw.com",
+    "contact": {
+      "primary_email": "admin@abc-sw.com",
+      "primary_name": "ABC Administrator",
+      "phone": "+1-555-0199"
+    }
+  },
+  "deployment": {
+    "policy": "standard",
+    "source": "stable_tags_only",
+    "target_version": "v1.0.0",
+    "environment": "production",
+    "auto_update": true,
+    "maintenance_window": {
+      "day": "Saturday",
+      "time": "02:00-06:00",
+      "timezone": "UTC"
+    }
+  },
+  "render": {
+    "api_key": "rnd_fWfFMOQc9IEDDGA6spUW4z58MUoX",
+    "region": "us-west-2"
+  },
+  "database": {
+    "host": "abc-sw-db.render.com",
+    "name": "securewatch_abc_sw",
+    "user": "abc_sw_user",
+    "password": "secure_abc_sw_password_2024",
+    "port": 5432,
+    "url": "postgresql://abc_sw_user:secure_abc_sw_password_2024@abc-sw-db.render.com:5432/securewatch_abc_sw"
+  },
+  "admin": {
+    "email": "admin@abc-sw.com",
+    "name": "ABC Administrator"
+  },
+  "seeding": {
+    "include_sample_data": true,
+    "sample_employee_count": 120,
+    "include_sample_violations": true,
+    "training_assignments": "auto_assign_mandatory"
+  },
+  "compliance": {
+    "required_frameworks": ["SOC2"],
+    "industry_specific": true,
+    "custom_requirements": []
+  },
+  "branding": {
+    "logo_url": "/assets/customers/abc-sw/logo.png",
+    "primary_color": "#2d3748",
+    "secondary_color": "#4a5568",
+    "company_name": "ABC SecureWatch"
+  },
+  "features": {
+    "training_management": true,
+    "compliance_tracking": true,
+    "email_analysis": true,
+    "network_monitoring": true,
+    "advanced_analytics": true
+  },
+  "notifications": {
+    "email_alerts": true,
+    "slack_webhook": "",
+    "sms_alerts": false
+  },
+  "security": {
+    "require_mfa": false,
+    "session_timeout": 45,
+    "password_policy": "standard",
+    "audit_logging": "standard"
+  }
+} 

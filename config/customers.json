@@ -107,11 +107,38 @@
         "time": "02:00-06:00",
         "timezone": "UTC"
       }
+    },
+    {
+      "name": "ABC SecureWatch",
+      "slug": "abc-sw",
+      "industry": "technology",
+      "size": "standard",
+      "current_version": "v1.0.0",
+      "target_version": "v1.0.0",
+      "deployment_policy": "standard",
+      "deployment_source": "stable_tags_only",
+      "database_url": "postgresql://abc_sw_user:secure_abc_sw_password_2024@abc-sw-db.render.com:5432/securewatch_abc_sw",
+      "render_services": {
+        "backend": "srv-abc-sw-backend-new001",
+        "frontend": "srv-abc-sw-frontend-new001"
+      },
+      "setup_date": "2024-03-21",
+      "last_updated": "2024-03-21",
+      "auto_update": true,
+      "contact": {
+        "email": "admin@abc-sw.com",
+        "name": "ABC Administrator"
+      },
+      "maintenance_window": {
+        "day": "Saturday",
+        "time": "02:00-06:00",
+        "timezone": "UTC"
+      }
     }
   ],
   "metadata": {
     "last_updated": "2024-03-15T10:30:00Z",
-    "total_customers": 4,
+    "total_customers": 5,
     "latest_version": "v1.0.0",
     "next_planned_version": "v1.1.0",
     "deployment_strategy": "tag_based_production",

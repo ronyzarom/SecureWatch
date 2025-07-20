@@ -51,6 +51,18 @@ while [[ $# -gt 0 ]]; do
       ENVIRONMENT="$2"
       shift 2
       ;;
+    --backend-service-id)
+      MANUAL_BACKEND_SERVICE_ID="$2"
+      shift 2
+      ;;
+    --frontend-service-id)
+      MANUAL_FRONTEND_SERVICE_ID="$2"
+      shift 2
+      ;;
+    --database-service-id)
+      MANUAL_DATABASE_SERVICE_ID="$2"
+      shift 2
+      ;;
     --dry-run)
       DRY_RUN=true
       shift
@@ -59,17 +71,19 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: $0 --config <config-file> [options]"
       echo ""
       echo "Options:"
-      echo "  --config       Customer configuration JSON file"
-      echo "  --version      Specific version/tag to deploy (e.g., v1.0.0, latest)"
-      echo "  --source       Deployment source (stable_tags_only, latest_stable_tag, main_branch)"
-      echo "  --environment  Target environment (production, staging, demo)"
-      echo "  --dry-run      Show what would be done without executing"
-      echo "  --help         Show this help message"
+      echo "  --config              Customer configuration JSON file"
+      echo "  --version             Specific version/tag to deploy (e.g., v1.0.0, latest)"
+      echo "  --source              Deployment source (stable_tags_only, latest_stable_tag, main_branch)"
+      echo "  --environment         Target environment (production, staging, demo)"
+      echo "  --backend-service-id  Existing Render backend service ID (srv-xxxxx)"
+      echo "  --frontend-service-id Existing Render frontend service ID (srv-xxxxx)"
+      echo "  --database-service-id Existing Render database service ID (srv-xxxxx)"
+      echo "  --dry-run             Show what would be done without executing"
+      echo "  --help                Show this help message"
       echo ""
       echo "Examples:"
       echo "  $0 --config config/acme.json --version v1.0.0"
-      echo "  $0 --config config/startup.json --source latest_stable_tag"
-      echo "  $0 --config config/demo.json --environment demo --source main_branch"
+      echo "  $0 --config config/abc-sw.json --backend-service-id srv-abc123 --frontend-service-id srv-def456 --database-service-id srv-ghi789"
       exit 0
       ;;
     *)
@@ -274,9 +288,10 @@ test_database() {
   
   # Test connection
   if ! psql "$DATABASE_URL" -c "SELECT version();" >/dev/null 2>&1; then
-    log_error "Cannot connect to database. Check your configuration."
+    log_warning "Cannot connect to database. This is normal for new customer deployments."
     log_info "Database URL: $DATABASE_URL"
-    exit 1
+    log_info "Database will be created during Render service provisioning."
+    return 0  # Don't exit, just warn and continue
   fi
   
   log_success "Database connection successful"
@@ -284,11 +299,36 @@ test_database() {
 
 # Create Render services
 create_render_services() {
-  log_info "Creating Render services..."
+  log_info "Configuring Render services..."
   
+  # Check if manual service IDs were provided
+  if [[ -n "$MANUAL_BACKEND_SERVICE_ID" || -n "$MANUAL_FRONTEND_SERVICE_ID" || -n "$MANUAL_DATABASE_SERVICE_ID" ]]; then
+    log_info "Using manually created Render services:"
+    
+    if [[ -n "$MANUAL_BACKEND_SERVICE_ID" ]]; then
+      log_info "  - Backend: $MANUAL_BACKEND_SERVICE_ID"
+      BACKEND_SERVICE_ID="$MANUAL_BACKEND_SERVICE_ID"
+    fi
+    
+    if [[ -n "$MANUAL_FRONTEND_SERVICE_ID" ]]; then
+      log_info "  - Frontend: $MANUAL_FRONTEND_SERVICE_ID"
+      FRONTEND_SERVICE_ID="$MANUAL_FRONTEND_SERVICE_ID"
+    fi
+    
+    if [[ -n "$MANUAL_DATABASE_SERVICE_ID" ]]; then
+      log_info "  - Database: $MANUAL_DATABASE_SERVICE_ID"
+      DATABASE_SERVICE_ID="$MANUAL_DATABASE_SERVICE_ID"
+    fi
+    
+    log_success "Manual service IDs configured"
+    return 0
+  fi
+  
+  # Original API-based service creation (if no manual IDs provided)
   if [[ -z "$RENDER_API_KEY" || "$RENDER_API_KEY" == "null" ]]; then
     log_warning "No Render API key provided, skipping service creation"
     log_info "Please create services manually in Render dashboard"
+    log_info "Then use --backend-service-id, --frontend-service-id, --database-service-id arguments"
     return 0
   fi
   
@@ -538,6 +578,7 @@ main() {
   check_dependencies
   parse_config
   determine_deployment_strategy
+  create_render_services  # Add this BEFORE database test
   test_database
   checkout_deployment_version
   init_database

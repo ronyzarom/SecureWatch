@@ -1,0 +1,59 @@
+{
+  "customer": {
+    "name": "ACME Corporation",
+    "slug": "acme-corp",
+    "industry": "technology",
+    "size": "midsize",
+    "domain": "acme.com",
+    "contact": {
+      "primary_email": "admin@acme.com",
+      "primary_name": "John Smith",
+      "phone": "+1-555-0123"
+    }
+  },
+  "database": {
+    "host": "acme-db.render.com",
+    "name": "securewatch_acme",
+    "user": "acme_user",
+    "password": "secure_password_here",
+    "port": 5432
+  },
+  "render": {
+    "api_key": "your_render_api_key_here",
+    "region": "us-west-2"
+  },
+  "admin": {
+    "email": "admin@acme.com",
+    "name": "ACME Administrator",
+    "password": "change_this_password"
+  },
+  "seeding": {
+    "include_sample_data": true,
+    "sample_employee_count": 150,
+    "include_sample_violations": true,
+    "training_assignments": "auto_assign_mandatory"
+  },
+  "compliance": {
+    "required_frameworks": ["SOC2", "ISO27001"],
+    "industry_specific": true,
+    "custom_requirements": []
+  },
+  "branding": {
+    "logo_url": "/assets/customers/acme/logo.png",
+    "primary_color": "#0066cc",
+    "secondary_color": "#004499",
+    "company_name": "ACME Corporation"
+  },
+  "features": {
+    "training_management": true,
+    "compliance_tracking": true,
+    "email_analysis": true,
+    "network_monitoring": false,
+    "advanced_analytics": true
+  },
+  "notifications": {
+    "email_alerts": true,
+    "slack_webhook": "",
+    "sms_alerts": false
+  }
+} 

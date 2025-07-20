@@ -10,7 +10,7 @@
         "backend": "srv-acme-backend-abc123",
         "frontend": "srv-acme-frontend-def456"
       },
-      "current_version": "v2.0.0",
+      "current_version": "v1.0.0",
       "setup_date": "2024-01-15",
       "contact": {
         "email": "admin@acme.com",
@@ -27,7 +27,7 @@
         "backend": "srv-techstart-backend-ghi789",
         "frontend": "srv-techstart-frontend-jkl012"
       },
-      "current_version": "v2.0.0",
+      "current_version": "v1.0.0",
       "setup_date": "2024-02-01",
       "contact": {
         "email": "cto@techstart.com",
@@ -44,7 +44,7 @@
         "backend": "srv-medhealth-backend-mno345",
         "frontend": "srv-medhealth-frontend-pqr678"
       },
-      "current_version": "v1.9.0",
+      "current_version": "v0.9.0",
       "setup_date": "2024-01-20",
       "contact": {
         "email": "it@medhealth.com",
@@ -61,7 +61,7 @@
         "backend": "srv-finance-backend-stu901",
         "frontend": "srv-finance-frontend-vwx234"
       },
-      "current_version": "v2.0.0",
+      "current_version": "v1.0.0",
       "setup_date": "2023-12-10",
       "contact": {
         "email": "security@financefirst.com",
@@ -72,6 +72,6 @@
   "metadata": {
     "last_updated": "2024-03-15T10:30:00Z",
     "total_customers": 4,
-    "latest_version": "v2.1.0"
+    "latest_version": "v1.0.0"
   }
-} 
+}

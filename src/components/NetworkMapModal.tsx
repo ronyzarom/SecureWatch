@@ -538,8 +538,8 @@ export const NetworkMapModal: React.FC<NetworkMapModalProps> = ({ networkData, o
                         Violations ({investigationData.violations.length})
                       </h5>
                       <div className="space-y-2">
-                        {investigationData.violations.map((violation: any) => {
-                          const evidenceEmails = investigationData.emails.filter((email: any) => 
+                        {(investigationData.violations || []).map((violation: any) => {
+                          const evidenceEmails = (investigationData.emails || []).filter((email: any) => 
                             violation.emailEvidenceIds && violation.emailEvidenceIds.includes(email.id)
                           );
                           
@@ -613,14 +613,14 @@ export const NetworkMapModal: React.FC<NetworkMapModalProps> = ({ networkData, o
                   )}
 
                   {/* Email Evidence */}
-                  {investigationData.emails.length > 0 && (
+                  {(investigationData.emails || []).length > 0 && (
                     <div>
                       <h5 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center">
                         <Mail className="w-4 h-4 mr-2 text-blue-500" />
-                        Email Evidence ({investigationData.emails.length})
+                        Email Evidence ({(investigationData.emails || []).length})
                       </h5>
                       <div className="space-y-2 max-h-96 overflow-y-auto">
-                        {investigationData.emails
+                        {(investigationData.emails || [])
                           .sort((a: any, b: any) => {
                             const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
                             const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;

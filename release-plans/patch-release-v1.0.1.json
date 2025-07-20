@@ -1,0 +1,74 @@
+{
+  "patch_info": {
+    "version": "v1.0.1",
+    "type": "security",
+    "urgency": "critical",
+    "created_date": "2025-07-20T15:52:32Z",
+    "created_by": "ronyzaromil",
+    "status": "planned",
+    "base_version": "v1.0.0"
+  },
+  "customer_distribution": {
+    "demo":        0,
+    "startup":        1,
+    "standard":        1,
+    "enterprise":        2,
+    "total": 4
+  },
+  "rollout_timeline": {
+    "total_duration": "~1_hour",
+    "phases": [
+      {
+        "name": "validation",
+        "start_time": "immediately",
+        "duration": "5_to_15_minutes",
+        "activities": ["automated_testing", "security_scan"]
+      },
+      {
+        "name": "demo_deployment",
+        "start_time": "validation_complete",
+        "duration": "5_minutes",
+        "customer_count":        0,
+        "deployment_method": "immediate"
+      },
+      {
+        "name": "startup_deployment",
+        "start_time": "demo_complete + delay",
+        "duration": "15_minutes_to_4_hours",
+        "customer_count":        1,
+        "deployment_method": "automatic"
+      },
+      {
+        "name": "standard_deployment",
+        "start_time": "startup_complete + delay",
+        "duration": "2_to_12_hours",
+        "customer_count":        1,
+        "deployment_method": "automatic"
+      },
+      {
+        "name": "enterprise_deployment",
+        "start_time": "standard_complete + delay",
+        "duration": "4_to_24_hours",
+        "customer_count":        2,
+        "deployment_method": "automatic_with_notification"
+      }
+    ]
+  },
+  "patch_specific_config": {
+    "rollback_window": "24_hours",
+    "monitoring_duration": "48_hours",
+    "notification_required": false,
+    "testing_requirements": {
+  "unit_tests": "required",
+  "integration_tests": "required",
+  "performance_tests": "not_required",
+  "security_tests": "comprehensive"
+}
+  },
+  "deployment_tracking": {
+    "demo": [],
+    "startup": [],
+    "standard": [],
+    "enterprise": []
+  }
+}

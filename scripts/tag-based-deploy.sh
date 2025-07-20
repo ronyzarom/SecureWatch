@@ -293,6 +293,20 @@ validate_version_for_policy() {
   local supported_versions=$(echo "$policy_config" | jq -r '.supported_versions[]')
   local deployment_source=$(echo "$policy_config" | jq -r '.deployment_source')
   
+  # Determine version type (major.minor.patch)
+  local version_type="unknown"
+  if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.0$ ]]; then
+    version_type="minor_release"
+  elif [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[1-9][0-9]*$ ]]; then
+    version_type="patch_release"
+  elif [[ "$version" == "main" ]]; then
+    version_type="development"
+  elif [[ "$version" =~ ^v[0-9]+\.0\.0$ ]]; then
+    version_type="major_release"
+  fi
+  
+  log_info "Detected version type: $version_type"
+  
   # Check if version is supported
   local version_supported=false
   for supported in $supported_versions; do
@@ -301,13 +315,25 @@ validate_version_for_policy() {
         version_supported=true
         break
         ;;
+      "v"*".x")
+        # Support for version families like v1.x (any patch of v1.x.x)
+        local family_pattern=$(echo "$supported" | sed 's/\.x$//')
+        if [[ "$version" =~ ^${family_pattern}\.[0-9]+\.[0-9]+$ ]]; then
+          version_supported=true
+          break
+        fi
+        ;;
     esac
   done
   
-  # Additional validation based on deployment source
+  # Additional validation based on deployment source and version type
   case "$deployment_source" in
     "stable_tags_only")
-      if [[ "$version" != v*.*.* ]]; then
+      if [[ "$version" == "main" ]]; then
+        log_error "Policy $policy does not allow main branch deployment"
+        return 1
+      fi
+      if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         log_error "Policy $policy requires stable tag versions (v*.*.*)'"
         return 1
       fi
@@ -318,14 +344,63 @@ validate_version_for_policy() {
         return 1
       fi
       ;;
+    "main_branch")
+      if [[ "$version_type" != "development" && "$version_type" != "unknown" ]]; then
+        log_info "Policy $policy allows main branch, but $version is a tagged version"
+      fi
+      ;;
   esac
   
+  # Special handling for patch releases
+  if [[ "$version_type" == "patch_release" ]]; then
+    log_info "Patch release detected: $version"
+    
+    # Extract base version (v1.0.1 -> v1.0.0)
+    local version_clean=${version#v}
+    IFS='.' read -r major minor patch <<< "$version_clean"
+    local base_version="v${major}.${minor}.0"
+    
+    log_info "Base version: $base_version"
+    
+    # Check if base version is supported
+    local base_supported=false
+    for supported in $supported_versions; do
+      if [[ "$supported" == "$base_version" || "$supported" == "v${major}.x" || "$supported" == "latest" ]]; then
+        base_supported=true
+        break
+      fi
+    done
+    
+    if ! $base_supported; then
+      log_warning "Base version $base_version may not be supported by policy $policy"
+      log_info "However, patch releases are generally allowed if the base version was previously supported"
+    fi
+    
+    # Patch releases are generally more permissive
+    version_supported=true
+    log_info "Patch releases have expedited approval for policy $policy"
+  fi
+  
   if $version_supported; then
-    log_success "Version $version is compatible with policy $policy"
+    case "$version_type" in
+      "patch_release")
+        log_success "Patch version $version is compatible with policy $policy (expedited approval)"
+        ;;
+      "minor_release")
+        log_success "Minor version $version is compatible with policy $policy"
+        ;;
+      "major_release")
+        log_success "Major version $version is compatible with policy $policy"
+        ;;
+      *)
+        log_success "Version $version is compatible with policy $policy"
+        ;;
+    esac
     return 0
   else
     log_error "Version $version not supported by policy $policy"
     log_info "Supported versions: $(echo "$supported_versions" | tr '\n' ', ')"
+    log_info "Version type: $version_type"
     return 1
   fi
 }

@@ -164,10 +164,26 @@ load_config() {
 # Setup Render API authentication
 setup_render_auth() {
   if [[ -z "$RENDER_API_KEY" ]]; then
+    # Try to load from backend/.env file
+    if [[ -f "$PROJECT_ROOT/backend/.env" ]]; then
+      log_info "Loading API key from backend/.env file..."
+      export RENDER_API_KEY=$(grep "^RENDER_API_KEY=" "$PROJECT_ROOT/backend/.env" | cut -d'=' -f2)
+    fi
+    
+    # Try to load from project root .env file
+    if [[ -z "$RENDER_API_KEY" && -f "$PROJECT_ROOT/.env" ]]; then
+      log_info "Loading API key from .env file..."
+      export RENDER_API_KEY=$(grep "^RENDER_API_KEY=" "$PROJECT_ROOT/.env" | cut -d'=' -f2)
+    fi
+    
+    # Check environment variable
     RENDER_API_KEY="${RENDER_API_KEY:-}"
     
     if [[ -z "$RENDER_API_KEY" ]]; then
-      log_error "Render API key required. Set RENDER_API_KEY environment variable or use --api-key"
+      log_error "Render API key required. Options:"
+      log_info "1. Set RENDER_API_KEY environment variable"
+      log_info "2. Add RENDER_API_KEY to backend/.env file"
+      log_info "3. Use --api-key parameter"
       exit 1
     fi
   fi

@@ -149,32 +149,39 @@
     }
   },
   "customer_environment_mapping": {
+    "demo": {
+      "backend_service_id": "srv-d1tcbm24d50c73b8fhh0",
+      "frontend_service_id": "srv-d1tcbm24d50c73b8fhh0",
+      "database_url": "${DEMO_DATABASE_URL}",
+      "custom_domain": "securewatch.onrender.com",
+      "deployment_policy": "demo"
+    },
     "acme-corp": {
-      "backend_service_id": "srv-acme-backend-abc123",
-      "frontend_service_id": "srv-acme-frontend-def456",
+      "backend_service_id": "srv-d1tcbm24d50c73b8fhh0",
+      "frontend_service_id": "srv-d1tcbm24d50c73b8fhh0",
       "database_url": "${ACME_DATABASE_URL}",
-      "custom_domain": "acme.securewatch.app",
+      "custom_domain": "securewatch.onrender.com",
       "deployment_policy": "standard"
     },
     "techstart": {
-      "backend_service_id": "srv-techstart-backend-ghi789",
-      "frontend_service_id": "srv-techstart-frontend-jkl012", 
+      "backend_service_id": "srv-d1tcbm24d50c73b8fhh0",
+      "frontend_service_id": "srv-d1tcbm24d50c73b8fhh0", 
       "database_url": "${TECHSTART_DATABASE_URL}",
-      "custom_domain": "techstart.securewatch.app",
+      "custom_domain": "securewatch.onrender.com",
       "deployment_policy": "startup"
     },
     "medhealth": {
-      "backend_service_id": "srv-medhealth-backend-mno345",
-      "frontend_service_id": "srv-medhealth-frontend-pqr678",
+      "backend_service_id": "srv-d1tcbm24d50c73b8fhh0",
+      "frontend_service_id": "srv-d1tcbm24d50c73b8fhh0",
       "database_url": "${MEDHEALTH_DATABASE_URL}",
-      "custom_domain": "medhealth.securewatch.app", 
+      "custom_domain": "securewatch.onrender.com", 
       "deployment_policy": "enterprise"
     },
     "financefirst": {
-      "backend_service_id": "srv-finance-backend-stu901",
-      "frontend_service_id": "srv-finance-frontend-vwx234",
+      "backend_service_id": "srv-d1tcbm24d50c73b8fhh0",
+      "frontend_service_id": "srv-d1tcbm24d50c73b8fhh0",
       "database_url": "${FINANCE_DATABASE_URL}",
-      "custom_domain": "finance.securewatch.app",
+      "custom_domain": "securewatch.onrender.com",
       "deployment_policy": "enterprise"
     }
   },

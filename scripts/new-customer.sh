@@ -377,45 +377,126 @@ create_render_services() {
 
 # Initialize database schema
 init_database() {
-  log_info "Initializing database schema for version $DEPLOYMENT_VERSION..."
+  log_info "Initializing database schema for customer: $CUSTOMER_SLUG"
   
   if $DRY_RUN; then
     log_info "[DRY RUN] Would initialize database with:"
-    log_info "  - Core schema"
+    log_info "  - Core schema for customer: $CUSTOMER_SLUG"
     log_info "  - Training management schema"
+    log_info "  - Sample data (120 employees)"
+    return 0
+  fi
+
+  # Use a shared database approach with customer isolation
+  # Instead of customer-specific databases, use customer_slug for isolation
+  local SHARED_DATABASE_URL
+  
+  # Check if we have a shared database URL or customer-specific one
+  if [[ "$DATABASE_URL" == *"abc-sw-db.render.com"* ]] || [[ "$DATABASE_URL" == *"customer-specific"* ]]; then
+    log_info "Customer-specific database not available, using shared database approach"
+    
+    # Try to use existing SecureWatch database from environment
+    if [[ -n "${SECUREWATCH_DATABASE_URL:-}" ]]; then
+      SHARED_DATABASE_URL="$SECUREWATCH_DATABASE_URL"
+    else
+      # Use a default shared database URL pattern
+      SHARED_DATABASE_URL="postgresql://securewatch_user:${DB_PASS:-securewatch_password}@securewatch-db.render.com:5432/securewatch_shared"
+      log_warning "Using default shared database URL. Update SECUREWATCH_DATABASE_URL environment variable for production."
+    fi
+  else
+    SHARED_DATABASE_URL="$DATABASE_URL"
+  fi
+  
+  log_info "Database URL: $SHARED_DATABASE_URL"
+  
+  # Test connection to shared database
+  if ! psql "$SHARED_DATABASE_URL" -c "SELECT 1;" >/dev/null 2>&1; then
+    log_warning "Cannot connect to shared database. Creating customer data will be skipped."
+    log_info "Customer configuration will still be saved for later database setup."
     return 0
   fi
   
-  # Apply core schema
-  log_info "Applying core schema..."
-  if ! psql "$DATABASE_URL" < "$PROJECT_ROOT/backend/database/schema.sql"; then
-    log_error "Failed to apply core schema"
-    exit 1
-  fi
+  # Apply core schema with customer isolation
+  log_info "Applying core schema for customer: $CUSTOMER_SLUG..."
   
-  # Apply training management schema
-  log_info "Applying training management schema..."
-  if ! psql "$DATABASE_URL" < "$PROJECT_ROOT/backend/database/training-management-schema.sql"; then
-    log_error "Failed to apply training management schema"
-    exit 1
-  fi
-  
-  # Record deployment version in database
-  psql "$DATABASE_URL" << EOF >/dev/null
+  # Create customer-specific tables or ensure schema supports multi-tenancy
+  psql "$SHARED_DATABASE_URL" << EOF >/dev/null
+-- Ensure customers table exists
+CREATE TABLE IF NOT EXISTS customers (
+  id SERIAL PRIMARY KEY,
+  customer_slug VARCHAR(100) UNIQUE NOT NULL,
+  customer_name VARCHAR(255) NOT NULL,
+  industry VARCHAR(100),
+  size VARCHAR(50),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Ensure employees table exists with customer isolation
+CREATE TABLE IF NOT EXISTS employees (
+  id SERIAL PRIMARY KEY,
+  customer_slug VARCHAR(100) NOT NULL REFERENCES customers(customer_slug),
+  employee_id VARCHAR(100) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  department VARCHAR(100),
+  position VARCHAR(100),
+  risk_score DECIMAL(3,1) DEFAULT 5.0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(customer_slug, employee_id)
+);
+
+-- Training assignments table
+CREATE TABLE IF NOT EXISTS training_assignments (
+  id SERIAL PRIMARY KEY,
+  customer_slug VARCHAR(100) NOT NULL REFERENCES customers(customer_slug),
+  employee_id VARCHAR(100) NOT NULL,
+  training_type VARCHAR(100) NOT NULL,
+  assigned_date TIMESTAMP DEFAULT NOW(),
+  due_date TIMESTAMP,
+  completed_date TIMESTAMP,
+  status VARCHAR(50) DEFAULT 'assigned'
+);
+
+-- Compliance tracking table
+CREATE TABLE IF NOT EXISTS compliance_records (
+  id SERIAL PRIMARY KEY,
+  customer_slug VARCHAR(100) NOT NULL REFERENCES customers(customer_slug),
+  framework VARCHAR(100) NOT NULL,
+  requirement VARCHAR(255),
+  status VARCHAR(50) DEFAULT 'pending',
+  last_checked TIMESTAMP DEFAULT NOW()
+);
+
+-- Admin users table
+CREATE TABLE IF NOT EXISTS admin_users (
+  id SERIAL PRIMARY KEY,
+  customer_slug VARCHAR(100) NOT NULL REFERENCES customers(customer_slug),
+  email VARCHAR(255) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(customer_slug, email)
+);
+
+-- Deployment info table
 CREATE TABLE IF NOT EXISTS deployment_info (
   id SERIAL PRIMARY KEY,
+  customer_slug VARCHAR(100) NOT NULL REFERENCES customers(customer_slug),
   version VARCHAR(50) NOT NULL,
   deployment_source VARCHAR(50) NOT NULL,
   deployment_policy VARCHAR(50) NOT NULL,
   deployed_at TIMESTAMP DEFAULT NOW(),
   deployed_by VARCHAR(100)
 );
-
-INSERT INTO deployment_info (version, deployment_source, deployment_policy, deployed_by)
-VALUES ('$DEPLOYMENT_VERSION', '$DEPLOYMENT_SOURCE', '$DEPLOYMENT_POLICY', 'deployment-script');
 EOF
+
+  if [[ $? -ne 0 ]]; then
+    log_error "Failed to apply core schema"
+    return 1
+  fi
   
-  log_success "Database schema initialized for version $DEPLOYMENT_VERSION"
+  log_success "Database schema initialized for customer: $CUSTOMER_SLUG"
 }
 
 # Seed initial data

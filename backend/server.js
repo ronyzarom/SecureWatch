@@ -10,6 +10,9 @@ const swaggerSpecs = require('./docs/swagger');
 console.log('📁 Loading environment configuration...');
 require('dotenv').config();
 
+// Import customer database initialization
+const { initializeCustomerDatabase } = require('./database/customer-init');
+
 console.log('🚀 Initializing Express app...');
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -290,63 +293,64 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-console.log('🚀 Starting HTTP server...');
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 console.log(`   📍 Host: ${HOST}`);
 console.log(`   📍 Port: ${PORT}`);
 console.log(`   📍 Environment: ${process.env.NODE_ENV || 'development'}`);
 
-const server = app.listen(PORT, HOST, () => {
+// Initialize customer database before starting server
+async function startServer() {
   console.log('');
-  console.log('🎉 ==================================================');
-  console.log('🚀 SecureWatch Backend Successfully Started!');
-  console.log('🎉 ==================================================');
-  console.log(`🌐 Server running on: http://${HOST}:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health check: http://${HOST}:${PORT}/health`);
-  console.log(`📚 API Documentation: http://${HOST}:${PORT}/api-docs`);
-  console.log(`🛠️  Test endpoint: http://${HOST}:${PORT}/api/test`);
-  console.log('');
+  console.log('🔧 Starting SecureWatch initialization...');
   
-  // Log database status
-  if (process.env.DATABASE_URL) {
-    console.log('💾 Database: ✅ Connected (PostgreSQL)');
-  } else {
-    console.log('💾 Database: ⚠️  No DATABASE_URL configured');
+  // Import and run customer database initialization
+  try {
+    const { initializeCustomerDatabase } = require('./database/customer-init');
+    await initializeCustomerDatabase();
+  } catch (error) {
+    console.log('⚠️  Database initialization skipped:', error.message);
   }
-  
-  // Log security status
-  console.log(`🔐 Session Secret: ${process.env.SESSION_SECRET ? '✅ Configured' : '⚠️  Using default'}`);
-  console.log(`🔑 JWT Secret: ${process.env.JWT_SECRET ? '✅ Configured' : '⚠️  Using default'}`);
-  console.log(`🤖 OpenAI API: ${process.env.OPENAI_API_KEY ? '✅ Configured' : '❌ Not configured'}`);
-  
-  console.log('');
-  console.log('📋 Starting background services...');
-  
-  // Start policy action executor after a brief delay to ensure server is ready
-  setTimeout(() => {
-    try {
-      console.log('🔄 Initializing Policy Action Executor...');
-      policyActionExecutor.start();
-      console.log('✅ Policy Action Executor started successfully');
-    } catch (error) {
-      console.error('⚠️  Failed to start Policy Action Executor:', error.message);
-      console.error('Stack:', error.stack);
-    }
-  }, 2000);
-  
-  console.log('');
-  console.log('🎯 Server is ready to accept requests!');
-  console.log('==================================================');
-});
 
-// Handle server errors
-server.on('error', (error) => {
-  console.error('❌ Server error:', error);
-  if (error.code === 'EADDRINUSE') {
-    console.error(`💥 Port ${PORT} is already in use!`);
-  }
+  // Start the server
+  const server = app.listen(PORT, HOST, () => {
+    console.log('');
+    console.log('🎉 ==================================================');
+    console.log('🚀 SecureWatch Backend Successfully Started!');
+    console.log('🎉 ==================================================');
+    console.log(`🌐 Server running on: http://${HOST}:${PORT}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔗 Health check: http://${HOST}:${PORT}/health`);
+    console.log(`📚 API Documentation: http://${HOST}:${PORT}/api-docs`);
+    console.log(`🛠️  Test endpoint: http://${HOST}:${PORT}/api/test`);
+    console.log('');
+    
+    // Show customer-specific information
+    const customerSlug = process.env.CUSTOMER_SLUG || 'default';
+    const customerName = process.env.CUSTOMER_NAME || 'Default Customer';
+    console.log('👤 Customer Information:');
+    console.log(`   - Customer: ${customerName}`);
+    console.log(`   - Slug: ${customerSlug}`);
+    console.log(`   - Admin: ${process.env.ADMIN_EMAIL || 'admin@abc-sw.com'}`);
+    console.log('');
+  });
+
+  // Error handling
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use`);
+    } else {
+      console.error('❌ Server error:', error);
+    }
+    process.exit(1);
+  });
+
+  return server;
+}
+
+// Start the server
+startServer().catch(error => {
+  console.error('❌ Failed to start server:', error);
+  process.exit(1);
 });
 
 // Graceful shutdown

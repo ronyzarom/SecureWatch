@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # =============================================================================
-# SECUREWATCH INTELLIGENT STARTUP SCRIPT
+# SECUREWATCH INTELLIGENT FULLSTACK STARTUP SCRIPT
 # =============================================================================
 # Auto-detects deployment type and initializes system appropriately
-# Works for both new deployments and existing customers
+# Handles FULLSTACK deployment: Frontend build + Backend server
 # Compatible with local development and cloud (Render) environments
 
 set -e  # Exit on any error
@@ -49,13 +49,16 @@ detect_environment() {
     
     if [[ -n "$RENDER" ]]; then
         DEPLOY_ENV="render"
-        log_info "Environment: Render Cloud"
+        DEPLOY_TYPE="fullstack"
+        log_info "Environment: Render Cloud (Fullstack)"
     elif [[ "$NODE_ENV" == "production" ]]; then
         DEPLOY_ENV="production"
-        log_info "Environment: Production"
+        DEPLOY_TYPE="fullstack"
+        log_info "Environment: Production (Fullstack)"
     else
         DEPLOY_ENV="development"
-        log_info "Environment: Development"
+        DEPLOY_TYPE="backend-only"
+        log_info "Environment: Development (Backend Only)"
     fi
     
     # Detect customer
@@ -63,6 +66,52 @@ detect_environment() {
     CUSTOMER_NAME="${CUSTOMER_NAME:-SecureWatch}"
     
     log_info "Customer: $CUSTOMER_NAME ($CUSTOMER_SLUG)"
+    log_info "Deployment Type: $DEPLOY_TYPE"
+}
+
+# =============================================================================
+# FRONTEND BUILD (for fullstack deployments)
+# =============================================================================
+build_frontend() {
+    if [[ "$DEPLOY_TYPE" != "fullstack" ]]; then
+        log_info "Skipping frontend build for backend-only deployment"
+        return 0
+    fi
+    
+    log_info "Building frontend for fullstack deployment..."
+    
+    # Check if frontend files exist
+    if [[ ! -f "$SCRIPT_DIR/package.json" ]] || [[ ! -f "$SCRIPT_DIR/vite.config.ts" ]]; then
+        log_warning "Frontend build files not found, skipping frontend build"
+        return 0
+    fi
+    
+    cd "$SCRIPT_DIR"
+    
+    # Install frontend dependencies
+    log_info "Installing frontend dependencies..."
+    if ! npm install; then
+        log_error "Frontend dependency installation failed"
+        return 1
+    fi
+    
+    # Build frontend
+    log_info "Building frontend assets..."
+    if ! npm run build; then
+        log_error "Frontend build failed"
+        return 1
+    fi
+    
+    # Verify build output
+    if [[ -d "$SCRIPT_DIR/dist" ]]; then
+        log_success "Frontend build completed - dist/ directory created"
+        log_info "Frontend build size: $(du -sh dist/ | cut -f1)"
+    else
+        log_error "Frontend build failed - no dist/ directory found"
+        return 1
+    fi
+    
+    return 0
 }
 
 # =============================================================================
@@ -81,6 +130,7 @@ test_database_connection() {
     log_info "Database host: $DB_HOST"
     
     # Test connection using Node.js
+    cd "$SCRIPT_DIR/backend"
     if node -e "
         const { Pool } = require('pg');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -103,6 +153,7 @@ detect_deployment_type() {
     log_info "Detecting deployment type..."
     
     # Check if database tables exist
+    cd "$SCRIPT_DIR/backend"
     TABLES_EXIST=$(node -e "
         const { Pool } = require('pg');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -152,17 +203,8 @@ initialize_database() {
 # =============================================================================
 # DEPENDENCY INSTALLATION
 # =============================================================================
-install_dependencies() {
-    log_info "Installing dependencies..."
-    
-    # Install root dependencies if package.json exists
-    if [[ -f "$SCRIPT_DIR/package.json" ]]; then
-        cd "$SCRIPT_DIR"
-        if command -v npm >/dev/null 2>&1; then
-            log_info "Installing root dependencies..."
-            npm install --production
-        fi
-    fi
+install_backend_dependencies() {
+    log_info "Installing backend dependencies..."
     
     # Install backend dependencies
     if [[ -f "$SCRIPT_DIR/backend/package.json" ]]; then
@@ -173,29 +215,55 @@ install_dependencies() {
         fi
     fi
     
-    log_success "Dependencies installed"
+    log_success "Backend dependencies installed"
+}
+
+# =============================================================================
+# STATIC FILE SERVING SETUP
+# =============================================================================
+setup_static_serving() {
+    if [[ "$DEPLOY_TYPE" != "fullstack" ]]; then
+        log_info "Skipping static file setup for backend-only deployment"
+        return 0
+    fi
+    
+    log_info "Setting up static file serving for fullstack deployment..."
+    
+    # Verify frontend build exists
+    if [[ -d "$SCRIPT_DIR/dist" ]]; then
+        log_info "Frontend build found - static files will be served from /dist"
+        export SERVE_STATIC="true"
+        export STATIC_DIR="$SCRIPT_DIR/dist"
+    else
+        log_warning "No frontend build found - running in API-only mode"
+        export SERVE_STATIC="false"
+    fi
 }
 
 # =============================================================================
 # SERVER STARTUP
 # =============================================================================
 start_server() {
-    log_info "Starting SecureWatch server..."
+    log_info "Starting SecureWatch fullstack server..."
     
     cd "$SCRIPT_DIR/backend"
     
-    # Set default environment variables
+    # Set environment variables
     export NODE_ENV="${NODE_ENV}"
     export PORT="${PORT}"
+    export CUSTOMER_SLUG="${CUSTOMER_SLUG}"
+    export CUSTOMER_NAME="${CUSTOMER_NAME}"
     
     log_info "Server configuration:"
     log_info "  - Environment: $NODE_ENV"
     log_info "  - Port: $PORT"
     log_info "  - Customer: $CUSTOMER_NAME ($CUSTOMER_SLUG)"
+    log_info "  - Deployment: $DEPLOY_TYPE"
+    log_info "  - Static serving: ${SERVE_STATIC:-false}"
     
     # Start the server
     if [[ -f "server.js" ]]; then
-        log_success "Starting server with node server.js"
+        log_success "Starting fullstack server with node server.js"
         exec node server.js
     else
         log_error "Server file not found: backend/server.js"
@@ -204,52 +272,41 @@ start_server() {
 }
 
 # =============================================================================
-# HEALTH CHECK
-# =============================================================================
-perform_health_check() {
-    log_info "Performing post-startup health check..."
-    
-    # Give server time to start
-    sleep 3
-    
-    # Check if server is responding
-    if curl -f "http://localhost:$PORT/health" >/dev/null 2>&1; then
-        log_success "Health check passed - server is responding"
-    else
-        log_warning "Health check failed - server may still be starting"
-    fi
-}
-
-# =============================================================================
 # MAIN EXECUTION FLOW
 # =============================================================================
 main() {
-    log "🚀 SECUREWATCH INTELLIGENT STARTUP"
-    log "=================================="
+    log "🚀 SECUREWATCH INTELLIGENT FULLSTACK STARTUP"
+    log "============================================="
     log ""
     
     # 1. Detect environment and customer
     detect_environment
     log ""
     
-    # 2. Install dependencies if needed
+    # 2. Build frontend if fullstack deployment
+    if ! build_frontend; then
+        log_error "Frontend build failed - continuing with backend only"
+    fi
+    log ""
+    
+    # 3. Install backend dependencies if needed
     if [[ "$DEPLOY_ENV" != "render" ]]; then
-        install_dependencies
+        install_backend_dependencies
         log ""
     fi
     
-    # 3. Test database connectivity
+    # 4. Test database connectivity
     if ! test_database_connection; then
         log_error "Cannot proceed without database connection"
         exit 1
     fi
     log ""
     
-    # 4. Detect deployment type
+    # 5. Detect deployment type
     detect_deployment_type
     log ""
     
-    # 5. Initialize database if new deployment
+    # 6. Initialize database if new deployment
     if [[ "$DEPLOYMENT_TYPE" == "new" ]]; then
         log_info "🔧 NEW DEPLOYMENT DETECTED - Initializing system..."
         if ! initialize_database; then
@@ -263,8 +320,12 @@ main() {
         log ""
     fi
     
-    # 6. Start the server
-    log_info "🌐 Starting application server..."
+    # 7. Setup static file serving for fullstack
+    setup_static_serving
+    log ""
+    
+    # 8. Start the server
+    log_info "🌐 Starting fullstack application server..."
     start_server
 }
 

@@ -143,15 +143,18 @@ async function initializeCoreSchema() {
       evidence TEXT
     );
 
-    -- Admin users table
-    CREATE TABLE IF NOT EXISTS admin_users (
+    -- Admin users table (renamed to users for auth compatibility)
+    CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       customer_slug VARCHAR(100) NOT NULL REFERENCES customers(customer_slug),
       email VARCHAR(255) NOT NULL,
       name VARCHAR(255) NOT NULL,
       password_hash VARCHAR(255) NOT NULL,
       role VARCHAR(50) DEFAULT 'admin',
+      department VARCHAR(100) DEFAULT 'Administration',
+      is_active BOOLEAN DEFAULT true,
       created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
       last_login TIMESTAMP,
       UNIQUE(customer_slug, email)
     );
@@ -222,7 +225,7 @@ async function createAdminUser(customerSlug) {
   const passwordHash = await bcrypt.hash(adminPassword, 10);
   
   await pool.query(`
-    INSERT INTO admin_users (customer_slug, email, name, password_hash, role)
+    INSERT INTO users (customer_slug, email, name, password_hash, role)
     VALUES ($1, $2, $3, $4, 'admin')
     ON CONFLICT (customer_slug, email) DO NOTHING
   `, [customerSlug, adminEmail, adminName, passwordHash]);

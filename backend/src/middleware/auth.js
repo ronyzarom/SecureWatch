@@ -13,10 +13,10 @@ const requireAuth = async (req, res, next) => {
 
     // Get user details from database and link to employee record
     const result = await query(`
-      SELECT u.id, u.email, u.name, u.role, u.department, u.is_active,
+      SELECT u.id, u.email, u.name, u.role, u.department, u.is_active, u.customer_slug,
              e.id as employee_id, e.compliance_profile_id, e.risk_score, e.risk_level
       FROM users u
-      LEFT JOIN employees e ON u.email = e.email AND e.is_active = true
+      LEFT JOIN employees e ON u.email = e.email AND u.customer_slug = e.customer_slug AND e.is_active = true
       WHERE u.id = $1
     `, [req.session.userId]);
 
@@ -141,7 +141,7 @@ const optionalAuth = async (req, res, next) => {
   try {
     if (req.session && req.session.userId) {
       const result = await query(
-        'SELECT id, email, name, role, department, is_active FROM users WHERE id = $1',
+        'SELECT id, email, name, role, department, is_active, customer_slug FROM users WHERE id = $1',
         [req.session.userId]
       );
 

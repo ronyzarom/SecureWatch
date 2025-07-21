@@ -5,7 +5,7 @@
 # =============================================================================
 # Auto-detects deployment type and initializes system appropriately
 # Handles FULLSTACK deployment: Frontend build + Backend server
-# Compatible with local development and cloud (Render) environments
+# Respects existing .env file configuration
 
 set -e  # Exit on any error
 
@@ -42,6 +42,63 @@ log_error() {
 }
 
 # =============================================================================
+# ENVIRONMENT FILE LOADING
+# =============================================================================
+load_environment_files() {
+    log_info "Loading environment configuration..."
+    
+    # Determine which .env file to use based on environment
+    local env_file=""
+    
+    if [[ -n "$RENDER" ]]; then
+        log_info "Render environment detected - using environment variables"
+        return 0
+    elif [[ "$NODE_ENV" == "production" ]]; then
+        env_file="backend/.env.production"
+    elif [[ "$NODE_ENV" == "development" ]]; then
+        env_file="backend/.env.dev"
+    else
+        env_file="backend/.env"
+    fi
+    
+    # Try the specific environment file first
+    if [[ -f "$env_file" ]]; then
+        log_info "Loading environment from: $env_file"
+        set -a  # Export all variables
+        source "$env_file"
+        set +a  # Stop exporting
+        log_success "Environment variables loaded from $env_file"
+        return 0
+    fi
+    
+    # Fallback to backend/.env
+    if [[ -f "backend/.env" ]]; then
+        log_info "Loading environment from: backend/.env"
+        set -a  # Export all variables
+        source "backend/.env"
+        set +a  # Stop exporting
+        log_success "Environment variables loaded from backend/.env"
+        return 0
+    fi
+    
+    # Check if .env.example exists and suggest creating .env
+    if [[ -f "backend/.env.example" ]]; then
+        log_warning "No .env file found, but .env.example exists"
+        log_info "Creating backend/.env from backend/.env.example"
+        cp "backend/.env.example" "backend/.env"
+        log_info "Please edit backend/.env with your configuration and restart"
+        set -a
+        source "backend/.env"
+        set +a
+        log_success "Environment variables loaded from new backend/.env"
+        return 0
+    fi
+    
+    log_warning "No .env file found - using system environment variables only"
+    return 0
+}
+
+# =============================================================================
 # ENVIRONMENT DETECTION
 # =============================================================================
 detect_environment() {
@@ -61,12 +118,20 @@ detect_environment() {
         log_info "Environment: Development (Backend Only)"
     fi
     
-    # Detect customer
+    # Detect customer from environment variables (loaded from .env)
     CUSTOMER_SLUG="${CUSTOMER_SLUG:-default}"
     CUSTOMER_NAME="${CUSTOMER_NAME:-SecureWatch}"
     
     log_info "Customer: $CUSTOMER_NAME ($CUSTOMER_SLUG)"
     log_info "Deployment Type: $DEPLOY_TYPE"
+    
+    # Log loaded configuration
+    log_info "Configuration summary:"
+    log_info "  - DATABASE_URL: ${DATABASE_URL:+✅ Set}"
+    log_info "  - DB_HOST: ${DB_HOST:-not set}"
+    log_info "  - DB_NAME: ${DB_NAME:-not set}"
+    log_info "  - SESSION_SECRET: ${SESSION_SECRET:+✅ Set}"
+    log_info "  - JWT_SECRET: ${JWT_SECRET:+✅ Set}"
 }
 
 # =============================================================================
@@ -120,28 +185,61 @@ build_frontend() {
 test_database_connection() {
     log_info "Testing database connectivity..."
     
-    if [[ -z "$DATABASE_URL" ]]; then
-        log_warning "DATABASE_URL not set, using default local database"
-        DATABASE_URL="postgresql://postgres:password@localhost:5432/securewatch"
+    # Use DATABASE_URL if available (preferred for cloud deployments)
+    if [[ -n "$DATABASE_URL" ]]; then
+        log_info "Using DATABASE_URL for connection"
+        DB_HOST=$(echo "$DATABASE_URL" | sed -n 's/.*@\([^:]*\).*/\1/p')
+    # Otherwise use individual DB_* variables from .env
+    elif [[ -n "$DB_HOST" ]]; then
+        log_info "Using DB_* variables for connection"
+        log_info "Database configuration:"
+        log_info "  - Host: ${DB_HOST}"
+        log_info "  - Port: ${DB_PORT:-5432}"
+        log_info "  - Database: ${DB_NAME}"
+        log_info "  - User: ${DB_USER}"
+    else
+        log_error "No database configuration found"
+        log_error "Please set DATABASE_URL or DB_* variables in your .env file"
+        return 1
     fi
     
-    # Extract database details for testing
-    DB_HOST=$(echo "$DATABASE_URL" | sed -n 's/.*@\([^:]*\).*/\1/p')
-    log_info "Database host: $DB_HOST"
+    log_info "Database host: ${DB_HOST:-unknown}"
     
-    # Test connection using Node.js
+    # Test connection using Node.js with dotenv
     cd "$SCRIPT_DIR/backend"
     if node -e "
+        require('dotenv').config();
         const { Pool } = require('pg');
-        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        
+        let connectionConfig;
+        if (process.env.DATABASE_URL) {
+            connectionConfig = { connectionString: process.env.DATABASE_URL };
+        } else {
+            connectionConfig = {
+                host: process.env.DB_HOST,
+                port: process.env.DB_PORT || 5432,
+                database: process.env.DB_NAME,
+                user: process.env.DB_USER,
+                password: process.env.DB_PASSWORD
+            };
+        }
+        
+        const pool = new Pool(connectionConfig);
         pool.query('SELECT 1')
-            .then(() => { console.log('✅ Database connection successful'); process.exit(0); })
-            .catch(err => { console.error('❌ Database connection failed:', err.message); process.exit(1); });
+            .then(() => { 
+                console.log('✅ Database connection successful'); 
+                process.exit(0); 
+            })
+            .catch(err => { 
+                console.error('❌ Database connection failed:', err.message); 
+                process.exit(1); 
+            });
     " 2>/dev/null; then
         log_success "Database connection established"
         return 0
     else
         log_error "Database connection failed"
+        log_error "Please check your database configuration in .env file"
         return 1
     fi
 }
@@ -155,8 +253,23 @@ detect_deployment_type() {
     # Check if database tables exist
     cd "$SCRIPT_DIR/backend"
     TABLES_EXIST=$(node -e "
+        require('dotenv').config();
         const { Pool } = require('pg');
-        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        
+        let connectionConfig;
+        if (process.env.DATABASE_URL) {
+            connectionConfig = { connectionString: process.env.DATABASE_URL };
+        } else {
+            connectionConfig = {
+                host: process.env.DB_HOST,
+                port: process.env.DB_PORT || 5432,
+                database: process.env.DB_NAME,
+                user: process.env.DB_USER,
+                password: process.env.DB_PASSWORD
+            };
+        }
+        
+        const pool = new Pool(connectionConfig);
         pool.query(\"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users'\")
             .then(result => { 
                 const count = parseInt(result.rows[0].count);
@@ -244,30 +357,76 @@ setup_static_serving() {
 # SERVER STARTUP
 # =============================================================================
 start_server() {
-    log_info "Starting SecureWatch fullstack server..."
+    log_info "Starting SecureWatch server..."
     
     cd "$SCRIPT_DIR/backend"
     
-    # Set environment variables
+    # Export configuration that was loaded from .env files
     export NODE_ENV="${NODE_ENV}"
     export PORT="${PORT}"
-    export CUSTOMER_SLUG="${CUSTOMER_SLUG}"
-    export CUSTOMER_NAME="${CUSTOMER_NAME}"
     
     log_info "Server configuration:"
     log_info "  - Environment: $NODE_ENV"
     log_info "  - Port: $PORT"
-    log_info "  - Customer: $CUSTOMER_NAME ($CUSTOMER_SLUG)"
+    log_info "  - Customer: ${CUSTOMER_NAME} (${CUSTOMER_SLUG})"
     log_info "  - Deployment: $DEPLOY_TYPE"
     log_info "  - Static serving: ${SERVE_STATIC:-false}"
+    log_info "  - Database: ${DATABASE_URL:+DATABASE_URL}${DB_HOST:+DB_HOST}"
     
-    # Start the server
-    if [[ -f "server.js" ]]; then
-        log_success "Starting fullstack server with node server.js"
-        exec node server.js
+    if [[ "$DEPLOY_TYPE" == "backend-only" ]]; then
+        # Development mode: Start both backend and frontend
+        log_info "🔧 Development mode: Starting backend AND frontend servers"
+        
+        # Start backend server in background
+        if [[ -f "server.js" ]]; then
+            log_success "Starting backend server on port $PORT"
+            node server.js &
+            BACKEND_PID=$!
+            log_info "Backend PID: $BACKEND_PID"
+        else
+            log_error "Server file not found: backend/server.js"
+            exit 1
+        fi
+        
+        # Give backend time to start
+        sleep 2
+        
+        # Start frontend dev server
+        cd "$SCRIPT_DIR"
+        if [[ -f "package.json" ]]; then
+            log_success "Starting frontend dev server"
+            log_info "Frontend will be available at: http://localhost:5173"
+            log_info "Backend API available at: http://localhost:$PORT"
+            log_info ""
+            log_info "🌟 Development servers running:"
+            log_info "   Frontend: http://localhost:5173"
+            log_info "   Backend:  http://localhost:$PORT"
+            log_info "   API:      http://localhost:$PORT/api"
+            log_info ""
+            log_info "Press Ctrl+C to stop both servers"
+            
+            # Setup signal handlers to kill both processes
+            trap 'log_info "Stopping servers..."; kill $BACKEND_PID 2>/dev/null; exit 0' SIGINT SIGTERM
+            
+            # Start frontend (this will block)
+            npm run dev
+        else
+            log_error "Frontend package.json not found"
+            log_info "Backend server running on port $PORT"
+            wait $BACKEND_PID
+        fi
     else
-        log_error "Server file not found: backend/server.js"
-        exit 1
+        # Production/Render mode: Single fullstack server
+        log_info "🌐 Production mode: Starting fullstack server"
+        
+        # Start the server (it will load .env via dotenv)
+        if [[ -f "server.js" ]]; then
+            log_success "Starting fullstack server with node server.js"
+            exec node server.js
+        else
+            log_error "Server file not found: backend/server.js"
+            exit 1
+        fi
     fi
 }
 
@@ -279,34 +438,39 @@ main() {
     log "============================================="
     log ""
     
-    # 1. Detect environment and customer
+    # 1. Load environment files (.env, .env.dev, etc.)
+    load_environment_files
+    log ""
+    
+    # 2. Detect environment and customer
     detect_environment
     log ""
     
-    # 2. Build frontend if fullstack deployment
+    # 3. Build frontend if fullstack deployment
     if ! build_frontend; then
         log_error "Frontend build failed - continuing with backend only"
     fi
     log ""
     
-    # 3. Install backend dependencies if needed
+    # 4. Install backend dependencies if needed
     if [[ "$DEPLOY_ENV" != "render" ]]; then
         install_backend_dependencies
         log ""
     fi
     
-    # 4. Test database connectivity
+    # 5. Test database connectivity
     if ! test_database_connection; then
         log_error "Cannot proceed without database connection"
+        log_error "Please check your .env file configuration"
         exit 1
     fi
     log ""
     
-    # 5. Detect deployment type
+    # 6. Detect deployment type
     detect_deployment_type
     log ""
     
-    # 6. Initialize database if new deployment
+    # 7. Initialize database if new deployment
     if [[ "$DEPLOYMENT_TYPE" == "new" ]]; then
         log_info "🔧 NEW DEPLOYMENT DETECTED - Initializing system..."
         if ! initialize_database; then
@@ -320,11 +484,11 @@ main() {
         log ""
     fi
     
-    # 7. Setup static file serving for fullstack
+    # 8. Setup static file serving for fullstack
     setup_static_serving
     log ""
     
-    # 8. Start the server
+    # 9. Start the server
     log_info "🌐 Starting fullstack application server..."
     start_server
 }

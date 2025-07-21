@@ -1,0 +1,32 @@
+# ESSENTIAL RENDER ENVIRONMENT VARIABLES FOR ABC-SW
+# Copy these to your Render service Environment tab
+# STARTUP COMMAND: node startup.js (intelligent auto-detection)
+
+NODE_ENV=production
+PORT=10000
+DATABASE_URL=postgresql://abc_sw_user:MsYpDG694PnljqZhKoosURiEdrYkCMW8@dpg-d1uiv3s9c44c73d245qg-a.oregon-postgres.render.com/abc_sw
+SESSION_SECRET=abc-sw-secure-session-key-2024-production-v1
+JWT_SECRET=abc-sw-jwt-secret-2024-production-secure-key
+FRONTEND_URL=https://abc-sw.onrender.com
+CUSTOMER_SLUG=abc-sw
+CUSTOMER_NAME=ABC SecureWatch
+ADMIN_EMAIL=admin@abc-sw.com
+APP_VERSION=v1.0.0
+
+# ============================================================================
+# INTELLIGENT STARTUP FEATURES:
+# ============================================================================
+# ✅ Auto-detects new vs existing deployment
+# ✅ Initializes database only when needed  
+# ✅ Creates admin user for new deployments
+# ✅ Logs all actions to startup.log
+# ✅ Works in local, production, and Render environments
+
+# ============================================================================
+# DEPLOYMENT INSTRUCTIONS:
+# ============================================================================
+# 1. Copy environment variables above to Render
+# 2. Set Start Command to: node startup.js
+# 3. Click Manual Deploy
+# 4. Watch logs for intelligent initialization
+# 5. Test login: admin@abc-sw.com / SecureWatch2024! 

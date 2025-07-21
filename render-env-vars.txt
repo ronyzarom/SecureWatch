@@ -1,6 +1,6 @@
 # ESSENTIAL RENDER ENVIRONMENT VARIABLES FOR ABC-SW
 # FULLSTACK DEPLOYMENT: Frontend + Backend in one service
-# STARTUP COMMAND: node startup.js (intelligent auto-detection)
+# STARTUP COMMAND: ./start_app.sh (intelligent auto-detection)
 
 NODE_ENV=production
 PORT=10000
@@ -12,6 +12,13 @@ CUSTOMER_SLUG=abc-sw
 CUSTOMER_NAME=ABC SecureWatch
 ADMIN_EMAIL=admin@abc-sw.com
 APP_VERSION=v1.0.0
+
+# ============================================================================
+# OPTIMAL RENDER CONFIGURATION:
+# ============================================================================
+# Build Command: npm install && npm run build
+# Start Command: ./start_app.sh
+# Auto-Deploy: Enabled
 
 # ============================================================================
 # FULLSTACK INTELLIGENT STARTUP FEATURES:
@@ -29,20 +36,12 @@ APP_VERSION=v1.0.0
 # ============================================================================
 # 1. npm install (frontend dependencies)
 # 2. npm run build (creates /dist)
-# 3. Database connectivity test
-# 4. Auto-detect new vs existing deployment
-# 5. Initialize database if new (tables + admin user)
-# 6. Start Express server with static serving
-# 7. Serve React app + API endpoints
-
-# ============================================================================
-# RENDER SERVICE SETUP:
-# ============================================================================
-# 1. Service Type: Web Service
-# 2. Copy environment variables above to Environment tab
-# 3. Set Start Command: node startup.js
-# 4. Set Auto-Deploy: Enabled (deploys on git push)
-# 5. Click Manual Deploy to start
+# 3. ./start_app.sh detects Render environment
+# 4. Database connectivity test
+# 5. Auto-detect new vs existing deployment
+# 6. Initialize database if new (tables + admin user)
+# 7. Start Express server with static serving
+# 8. Serve React app + API endpoints
 
 # ============================================================================
 # WHAT HAPPENS ON DEPLOY:

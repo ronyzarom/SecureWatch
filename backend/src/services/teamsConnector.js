@@ -333,6 +333,104 @@ class TeamsConnector {
   }
 
   /**
+   * Check for policy violations and create alerts for Teams messages
+   */
+  async checkForTeamsViolations(message, teamInfo, channelInfo, riskAnalysis) {
+    try {
+      // Create violations for high-risk Teams messages
+      if (riskAnalysis.riskScore >= 70) {
+        const userEmail = message.from?.user?.mail || message.from?.user?.userPrincipalName;
+        
+        if (!userEmail) {
+          console.log(`⚠️ No email found for Teams user: ${message.from?.user?.displayName || 'Unknown'}`);
+          return;
+        }
+
+        // Find employee by email
+        const employeeResult = await query(`
+          SELECT id FROM employees WHERE email = $1
+        `, [userEmail]);
+
+        if (employeeResult.rows.length === 0) {
+          console.log(`⚠️ No employee found for Teams user: ${userEmail}`);
+          return;
+        }
+
+        const employeeId = employeeResult.rows[0].id;
+        const violationType = this.determineViolationType(riskAnalysis);
+        
+        const violationResult = await query(`
+          INSERT INTO violations (
+            employee_id, type, severity, description, 
+            source, metadata, status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING id
+        `, [
+          employeeId,
+          violationType,
+          riskAnalysis.riskScore >= 90 ? 'Critical' :
+          riskAnalysis.riskScore >= 80 ? 'High' : 'Medium',
+          `Teams violation detected in ${teamInfo.displayName}/${channelInfo.displayName}`,
+          'teams_analysis',
+          JSON.stringify({
+            messageId: message.id,
+            teamId: teamInfo.id,
+            teamName: teamInfo.displayName,
+            channelId: channelInfo.id,
+            channelName: channelInfo.displayName,
+            riskScore: riskAnalysis.riskScore,
+            riskFactors: riskAnalysis.riskFactors || []
+          }),
+          'Active'
+        ]);
+
+        const violationId = violationResult.rows[0].id;
+        console.log(`🚨 Created Teams violation ${violationId} for high-risk message in ${teamInfo.displayName}/${channelInfo.displayName}`);
+
+                 // 🆕 AUTO-TRIGGER ENHANCED POLICY EVALUATION
+         try {
+           const policyEvaluationEngine = require('./policyEvaluationEngine');
+           const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
+          if (policiesTriggered > 0) {
+            console.log(`🔥 Teams policy evaluation triggered ${policiesTriggered} policies for violation ${violationId}`);
+          } else {
+            console.log(`📋 No Teams policies triggered for violation ${violationId} (employee ${employeeId})`);
+          }
+        } catch (policyError) {
+          console.error(`❌ Failed to evaluate Teams policies for violation ${violationId}:`, policyError);
+          // Don't fail the entire process if policy evaluation fails
+        }
+      }
+
+    } catch (error) {
+      console.error(`❌ Error creating Teams violation:`, error);
+    }
+  }
+
+  /**
+   * Determine violation type based on risk analysis
+   */
+  determineViolationType(riskAnalysis) {
+    const factors = riskAnalysis.riskFactors || [];
+    const patterns = riskAnalysis.patterns || [];
+    
+    // Check for specific violation types based on analysis
+    if (factors.some(f => f.includes('data') || f.includes('confidential'))) {
+      return 'Teams Data Sharing Risk';
+    } else if (factors.some(f => f.includes('external') || f.includes('guest'))) {
+      return 'Teams External Communication Risk';
+    } else if (factors.some(f => f.includes('attachment') || f.includes('file'))) {
+      return 'Teams File Sharing Risk';
+    } else if (patterns.some(p => p.category === 'security')) {
+      return 'Teams Security Policy Violation';
+    } else if (patterns.some(p => p.category === 'compliance')) {
+      return 'Teams Compliance Violation';
+    } else {
+      return 'Teams Policy Violation';
+    }
+  }
+
+  /**
    * Sync messages from all teams and channels
    */
   async syncAllTeamsMessages(options = {}) {
@@ -380,6 +478,9 @@ class TeamsConnector {
                     
                     // Store in database
                     await this.storeTeamsMessage(message, team, channel, riskAnalysis);
+                    
+                    // Check for violations and trigger policies
+                    await this.checkForTeamsViolations(message, team, channel, riskAnalysis);
                     
                     // 🆕 Queue employee for AI compliance analysis (sync-triggered)
                     if (message.from?.user?.mail || message.from?.user?.userPrincipalName) {

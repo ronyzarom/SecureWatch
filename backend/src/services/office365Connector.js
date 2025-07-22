@@ -489,11 +489,12 @@ class Office365Connector {
       if (analysis.riskScore >= 70) {
         const violationType = this.determineViolationType(analysis);
         
-        await query(`
+        const violationResult = await query(`
           INSERT INTO violations (
             employee_id, type, severity, description, 
             source, metadata, status
           ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING id
         `, [
           employeeId,
           violationType,
@@ -510,7 +511,22 @@ class Office365Connector {
           'Active'
         ]);
 
-        console.log(`🚨 Created violation for high-risk email: ${emailData.subject}`);
+        const violationId = violationResult.rows[0].id;
+        console.log(`🚨 Created violation ${violationId} for high-risk email: ${emailData.subject}`);
+
+        // 🆕 AUTO-TRIGGER ENHANCED POLICY EVALUATION
+        try {
+          const policyEvaluationEngine = require('./policyEvaluationEngine');
+          const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
+          if (policiesTriggered > 0) {
+            console.log(`🔥 Policy evaluation triggered ${policiesTriggered} policies for violation ${violationId}`);
+          } else {
+            console.log(`📋 No policies triggered for violation ${violationId} (employee ${employeeId})`);
+          }
+        } catch (policyError) {
+          console.error(`❌ Failed to evaluate policies for violation ${violationId}:`, policyError);
+          // Don't fail the entire process if policy evaluation fails
+        }
       }
 
     } catch (error) {

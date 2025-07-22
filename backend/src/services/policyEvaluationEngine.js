@@ -39,6 +39,77 @@ class PolicyEvaluationEngine {
   }
 
   /**
+   * Evaluate a single condition against violation context
+   * This method is used by the test suite and external components
+   */
+  evaluateCondition(condition, context) {
+    try {
+      const { condition_type, operator, value } = condition;
+      const contextValue = this.getContextValue(condition_type, context);
+      
+      return this.applyOperator(contextValue, operator, value);
+    } catch (error) {
+      console.error(`Error evaluating condition:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get context value for condition evaluation
+   */
+  getContextValue(conditionType, context) {
+    switch (conditionType) {
+      case 'risk_score':
+        return context.riskScore || context.risk_score || 0;
+      case 'violation_severity':
+        return context.severity || 'Low';
+      case 'violation_type':
+        return context.type || context.violation_type || '';
+      case 'employee_department':
+        return context.department || '';
+      case 'employee_role':
+        return context.role || '';
+      case 'frequency':
+        return context.frequency || 0;
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Apply operator to compare values
+   */
+  applyOperator(contextValue, operator, targetValue) {
+    switch (operator) {
+      case 'equals':
+        return contextValue == targetValue;
+      case 'not_equals':
+        return contextValue != targetValue;
+      case 'greater_than':
+        return Number(contextValue) > Number(targetValue);
+      case 'less_than':
+        return Number(contextValue) < Number(targetValue);
+      case 'greater_equal':
+        return Number(contextValue) >= Number(targetValue);
+      case 'less_equal':
+        return Number(contextValue) <= Number(targetValue);
+      case 'contains':
+        return String(contextValue).toLowerCase().includes(String(targetValue).toLowerCase());
+      case 'not_contains':
+        return !String(contextValue).toLowerCase().includes(String(targetValue).toLowerCase());
+      case 'in':
+        const targetArray = Array.isArray(targetValue) ? targetValue : [targetValue];
+        return targetArray.includes(contextValue);
+      case 'not_in':
+        const excludeArray = Array.isArray(targetValue) ? targetValue : [targetValue];
+        return !excludeArray.includes(contextValue);
+      default:
+        console.warn(`Unknown operator: ${operator}`);
+        return false;
+    }
+  }
+
+  /**
    * Enhanced policy evaluation for violations
    * Replaces the simple database function with sophisticated logic
    */
@@ -64,8 +135,38 @@ class PolicyEvaluationEngine {
 
       // Get effective policies for this employee
       const policiesResult = await query(`
-        SELECT * FROM get_effective_policies($1)
-      `, [employeeId]);
+        SELECT 
+          sp.id as policy_id,
+          sp.name as policy_name,
+          sp.description,
+          sp.is_active,
+          sp.priority,
+          COALESCE(
+            (SELECT jsonb_agg(
+              jsonb_build_object(
+                'type', pc.condition_type,
+                'operator', pc.operator,
+                'value', pc.value,
+                'logical_operator', pc.logical_operator
+              ) ORDER BY pc.condition_order
+            ) FROM policy_conditions pc WHERE pc.policy_id = sp.id),
+            '[]'::jsonb
+          ) as conditions,
+          COALESCE(
+            (SELECT jsonb_agg(
+              jsonb_build_object(
+                'type', pa.action_type,
+                'config', pa.action_config,
+                'order', pa.execution_order,
+                'delay', pa.delay_minutes
+              ) ORDER BY pa.execution_order
+            ) FROM policy_actions pa WHERE pa.policy_id = sp.id AND pa.is_enabled = true),
+            '[]'::jsonb
+          ) as actions
+        FROM security_policies sp
+        WHERE sp.is_active = true
+        ORDER BY sp.priority DESC, sp.created_at DESC
+      `);
 
       if (policiesResult.rows.length === 0) {
         console.log(`📋 No policies found for employee ${employeeId}`);

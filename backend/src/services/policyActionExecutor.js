@@ -113,12 +113,9 @@ class PolicyActionExecutor {
     try {
       console.log(`🔍 Processing execution ${execution.id} for policy "${execution.policy_name}"`);
 
-      // Mark execution as in progress
-      await query(`
-        UPDATE policy_executions 
-        SET execution_status = 'processing'
-        WHERE id = $1
-      `, [execution.id]);
+      // Mark execution as in progress (skip this step since 'processing' is not allowed)
+      // The execution will stay as 'pending' until completed
+      console.log(`🔍 Processing execution ${execution.id} for policy "${execution.policy_name}"`);
 
       // Get all actions for this policy
       const actionsResult = await query(`

@@ -2,6 +2,7 @@ const { Client } = require('@microsoft/microsoft-graph-client');
 const { ConfidentialClientApplication } = require('@azure/msal-node');
 const { query } = require('../utils/database');
 const emailRiskAnalyzer = require('./emailRiskAnalyzer');
+const OptimizedEmailProcessor = require('./optimizedEmailProcessor');
 const { syncComplianceAnalyzer } = require('./syncComplianceAnalyzer');
 
 /**
@@ -23,6 +24,7 @@ class Office365Connector {
     this.isConfigured = false;
     this.config = null;
     this.complianceEnabled = false;
+    this.optimizedProcessor = new OptimizedEmailProcessor();
   }
 
   /**
@@ -279,7 +281,7 @@ class Office365Connector {
   }
 
   /**
-   * Process and analyze a single email
+   * Process and analyze a single email - OPTIMIZED VERSION
    */
   async processEmail(email, user, userId) {
     try {
@@ -327,48 +329,23 @@ class Office365Connector {
         console.warn(`⚠️ Employee not found for email: ${emailData.sender.email}`);
       }
 
-      // Run AI analysis
-      console.log(`🤖 Analyzing email: ${emailData.subject}`);
-      const analysis = await emailRiskAnalyzer.analyzeEmail({
-        id: emailData.messageId,
-        subject: emailData.subject,
-        bodyText: emailData.bodyText,
-        recipients: emailData.recipients,
-        attachments: emailData.attachments,
-        sentAt: emailData.sentAt,
-        sender: {
-          employeeId: employeeId,
-          email: emailData.sender.email,
-          name: emailData.sender.name,
-          department: employeeResult.rows[0]?.department
-        }
-      });
-
-      // Store email in database
-      await this.storeEmailInDatabase(emailData, analysis, employeeId);
-
-      // Check for violations and create alerts
-      await this.checkForViolations(emailData, analysis, employeeId);
+      // 🚀 OPTIMIZED: Use the cost-effective optimized processor
+      const result = await this.optimizedProcessor.processEmail(emailData, employeeId, 'office365');
 
       // Queue employee for AI compliance analysis (sync-triggered)
-      if (employeeId) {
+      if (employeeId && result.success) {
         await syncComplianceAnalyzer.queueEmployeeForAnalysis(employeeId, 'office365_email_sync');
       }
 
-      return {
-        success: true,
-        emailId: emailData.messageId,
-        riskScore: analysis.riskScore,
-        riskLevel: analysis.riskLevel,
-        violationsFound: analysis.riskFactors.length
-      };
+      return result;
 
     } catch (error) {
       console.error(`❌ Error processing email ${email.id}:`, error);
       return {
         success: false,
         emailId: email.id,
-        error: error.message
+        error: error.message,
+        optimized: true
       };
     }
   }
@@ -456,7 +433,7 @@ class Office365Connector {
         emailData.bodyHtml,
         JSON.stringify(emailData.attachments),
         emailData.sentAt,
-        Math.round(analysis.riskScore),
+        analysis.riskScore, // Already validated by emailRiskAnalyzer
         JSON.stringify({
           ai_analysis: {
             riskFactors: analysis.riskFactors,
@@ -898,6 +875,20 @@ class Office365Connector {
       console.error('❌ Error syncing Office 365 users to employees:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get optimized processing statistics
+   */
+  getOptimizedStats() {
+    return this.optimizedProcessor.getProcessingStats();
+  }
+
+  /**
+   * Reset optimized processing statistics
+   */
+  resetOptimizedStats() {
+    this.optimizedProcessor.resetStats();
   }
 }
 

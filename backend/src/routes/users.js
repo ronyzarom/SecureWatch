@@ -16,6 +16,7 @@ router.get('/', requireAdmin, async (req, res) => {
         id, email, name, role, department, is_active, 
         last_login, created_at, updated_at
       FROM users 
+      WHERE is_active = true
       ORDER BY created_at DESC
     `);
 
@@ -174,6 +175,11 @@ router.put('/:id', requireAdmin, async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
     const { email, name, role, department, isActive } = req.body;
+    
+    console.log('PUT /api/users/:id - Update request:', {
+      userId,
+      body: req.body
+    });
 
     if (isNaN(userId)) {
       return res.status(400).json({
@@ -232,13 +238,19 @@ router.put('/:id', requireAdmin, async (req, res) => {
       });
     }
 
-    // Add updated_at
-    paramCount++;
+    // Add updated_at (without incrementing paramCount since it uses NOW())
     updates.push(`updated_at = NOW()`);
 
     // Add user ID for WHERE clause
     paramCount++;
     values.push(userId);
+    
+    console.log('Update query debug:', {
+      updates: updates.join(', '),
+      values,
+      paramCount,
+      whereClause: `WHERE id = $${paramCount}`
+    });
 
     const result = await query(`
       UPDATE users 
@@ -260,7 +272,14 @@ router.put('/:id', requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update user error:', error);
+    console.error('Update user error:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      detail: error.detail,
+      userId,
+      requestBody: req.body
+    });
 
     // Handle unique constraint violations
     if (error.code === '23505') {
@@ -272,7 +291,8 @@ router.put('/:id', requireAdmin, async (req, res) => {
 
     res.status(500).json({
       error: 'Failed to update user',
-      code: 'UPDATE_ERROR'
+      code: 'UPDATE_ERROR',
+      details: error.message
     });
   }
 });
@@ -355,12 +375,15 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     }
 
     // Soft delete - set is_active to false
+    console.log(`Deactivating user ID: ${userId}`);
     const result = await query(`
       UPDATE users 
       SET is_active = false, updated_at = NOW() 
       WHERE id = $1
       RETURNING id, email, name
     `, [userId]);
+    
+    console.log(`User deactivated:`, result.rows[0]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({

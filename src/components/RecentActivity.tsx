@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Clock, AlertTriangle, Mail, Download } from 'lucide-react';
+import { Activity, Clock, AlertTriangle, Mail, Download, Shield } from 'lucide-react';
 import { formatTimeAgo } from '../utils/riskUtils';
 import api from '../services/api';
 
@@ -80,6 +80,7 @@ export const RecentActivity: React.FC = () => {
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'violation': return <AlertTriangle className="w-4 h-4 text-red-500" />;
+      case 'policy_execution': return <Shield className="w-4 h-4 text-green-500" />;
       case 'email': return <Mail className="w-4 h-4 text-blue-500" />;
       case 'download': return <Download className="w-4 h-4 text-orange-500" />;
       default: return <Activity className="w-4 h-4 text-gray-500" />;

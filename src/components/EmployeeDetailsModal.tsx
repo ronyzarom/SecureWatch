@@ -373,31 +373,43 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                                     </span>
                                   </div>
                                 )}
-                                {violation.metadata.riskScore && (
+                                {(() => {
+                                  const risk = violation.metadata.riskScore ?? violation.metadata.complianceRiskScore;
+                                  if (risk === undefined) return null;
+                                  return (
+                                    <div className="flex items-center space-x-2">
+                                      <span className="font-medium text-red-800 dark:text-red-200">Risk Score:</span>
+                                      <span className={`font-bold ${
+                                        risk >= 90 ? 'text-red-600 dark:text-red-400' :
+                                        risk >= 70 ? 'text-orange-600 dark:text-orange-400' :
+                                        'text-yellow-600 dark:text-yellow-400'
+                                      }`}>
+                                        {risk}%
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+                                {violation.metadata.regulationCode && (
                                   <div className="flex items-center space-x-2">
-                                    <span className="font-medium text-red-800 dark:text-red-200">Risk Score:</span>
-                                    <span className={`font-bold ${
-                                      violation.metadata.riskScore >= 90 ? 'text-red-600 dark:text-red-400' :
-                                      violation.metadata.riskScore >= 70 ? 'text-orange-600 dark:text-orange-400' :
-                                      'text-yellow-600 dark:text-yellow-400'
-                                    }`}>
-                                      {violation.metadata.riskScore}%
+                                    <span className="font-medium text-red-800 dark:text-red-200">Regulation:</span>
+                                    <span className="text-red-700 dark:text-red-300">
+                                      {violation.metadata.regulationCode}
                                     </span>
                                   </div>
                                 )}
-                                {violation.metadata.category && (
+                                {violation.metadata.article && (
                                   <div className="flex items-center space-x-2">
-                                    <span className="font-medium text-red-800 dark:text-red-200">Category:</span>
-                                    <span className="text-red-700 dark:text-red-300 capitalize">
-                                      {violation.metadata.category.replace('_', ' ')}
+                                    <span className="font-medium text-red-800 dark:text-red-200">Article:</span>
+                                    <span className="text-red-700 dark:text-red-300">
+                                      {violation.metadata.article}
                                     </span>
                                   </div>
                                 )}
-                                {violation.source && (
+                                {violation.metadata.policySection && (
                                   <div className="flex items-center space-x-2">
-                                    <span className="font-medium text-red-800 dark:text-red-200">Source:</span>
-                                    <span className="text-red-700 dark:text-red-300 capitalize">
-                                      {violation.source.replace('_', ' ')}
+                                    <span className="font-medium text-red-800 dark:text-red-200">Policy:</span>
+                                    <span className="text-red-700 dark:text-red-300">
+                                      {violation.metadata.policySection}
                                     </span>
                                   </div>
                                 )}
@@ -433,7 +445,9 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
                                   {violation.evidence?.length ? 
                                     `${violation.evidence.length} evidence items` : 
                                     violation.metadata?.emailId ? 
-                                      `Email Evidence - Risk: ${violation.metadata.riskScore}%` :
+                                      `Email Evidence - Risk: ${(
+                                        violation.metadata.riskScore ?? violation.metadata.complianceRiskScore ?? 'N/A'
+                                      )}%` :
                                       'No evidence'
                                   }
                                 </span>

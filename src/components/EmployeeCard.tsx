@@ -321,60 +321,96 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
 }) => {
   const violationCount = employee.violationCount || employee.violations?.length || 0;
 
-  // Grid Layout (Default)
-  if (layout === 'grid') {
-    return (
-      <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border-2 ${getRiskBorderColor(employee.riskLevel)} p-6 hover:shadow-md transition-all duration-200 cursor-pointer ${className}`}
-           onClick={() => onViewDetails(employee)}>
-        <div className="flex items-center space-x-4">
-          <Avatar employee={employee} size="md" />
-          
-          <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900 dark:text-white">{employee.name}</h3>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10`}>
-                {employee.riskLevel}
+  return (
+    // Grid Layout
+    layout === 'grid' ? (
+      <div className={`group relative overflow-hidden rounded-2xl shadow-lg border ${getRiskBorderColor(employee.riskLevel)} p-6 transform transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl cursor-pointer backdrop-blur-sm ${className}`}
+        onClick={() => onViewDetails?.(employee)}>
+        
+        {/* Decorative background pattern */}
+        <div className="absolute inset-0 opacity-5 dark:opacity-10">
+          <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-current"></div>
+          <div className="absolute -bottom-10 -left-10 w-24 h-24 rounded-full bg-current"></div>
+        </div>
+
+        <div className="relative z-10">
+          {/* Header with Avatar and Name */}
+          <div className="flex items-center space-x-3 mb-4">
+            {/* Enhanced Avatar with ring */}
+            <div className="relative">
+              <Avatar employee={employee} size="md" />
+              <div className={`absolute inset-0 rounded-full ring-3 ${
+                employee.riskLevel === 'critical' ? 'ring-red-500/30' :
+                employee.riskLevel === 'high' ? 'ring-orange-500/30' :
+                employee.riskLevel === 'medium' ? 'ring-yellow-500/30' :
+                employee.riskLevel === 'low' ? 'ring-green-500/30' :
+                'ring-gray-400/30'
+              } shadow-lg pointer-events-none`}></div>
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                {employee.name}
+              </h3>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300 truncate">
+                {employee.title}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {employee.department}
+              </p>
+            </div>
+          </div>
+
+          {/* Status and Activity */}
+          <div className="flex items-center justify-between mb-4 text-xs">
+            <div className="flex items-center space-x-1">
+              <div className={`w-2 h-2 rounded-full ${
+                employee.lastActivity && employee.lastActivity !== 'N/A' ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+              }`}></div>
+              <span className="text-gray-600 dark:text-gray-400 font-medium">
+                {employee.lastActivity && employee.lastActivity !== 'N/A' ? 'Active' : 'Offline'}
               </span>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-300">{employee.jobTitle || employee.role}</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{employee.department}</p>
-            
-            <div className="flex items-center space-x-4 mt-3">
-              <div className="flex items-center space-x-1">
-                <Calendar className="w-4 h-4 text-gray-400" />
-                <span className="text-xs text-gray-500 dark:text-gray-400">{formatTimeAgo(employee.lastActivity)}</span>
-              </div>
-              {violationCount > 0 && (
-                <div className="flex items-center space-x-1">
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                  <span className="text-xs text-red-600">
-                    {violationCount} violation{violationCount > 1 ? 's' : ''}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {showMetrics && <EmployeeMetrics employee={employee} />}
-            
-            {/* Comprehensive Compliance Section */}
-            {showCompliance && (
-              <ComplianceSection employee={employee} layout="grid" />
-            )}
+            <span className="text-gray-500 dark:text-gray-400">
+              {employee.lastActivity ? formatTimeAgo(employee.lastActivity) : 'N/A'}
+            </span>
           </div>
-          
-          <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200 rounded-full transition-colors">
-            <Eye className="w-5 h-5" />
-          </button>
+
+          {/* Enhanced Metrics Grid */}
+          {showMetrics && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white/50 dark:bg-gray-700/50 rounded-lg p-3 text-center backdrop-blur-sm border border-white/20 dark:border-gray-600/20">
+                <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                  {employee.metrics?.emailVolume || 0}
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                  Emails
+                </div>
+              </div>
+              <div className="bg-white/50 dark:bg-gray-700/50 rounded-lg p-3 text-center backdrop-blur-sm border border-white/20 dark:border-gray-600/20">
+                <div className="text-lg font-bold text-red-600 dark:text-red-400">
+                  {employee.metrics?.securityEvents || 0}
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                  Security Events
+                </div>
+              </div>
+              <div className="bg-white/50 dark:bg-gray-700/50 rounded-lg p-3 text-center backdrop-blur-sm border border-white/20 dark:border-gray-600/20">
+                <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                  {employee.metrics?.afterHoursActivity || 0}%
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                  After Hours
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    );
-  }
-
-  // List Layout
-  if (layout === 'list') {
-    return (
+    ) : (
+      // List Layout
       <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 cursor-pointer ${className}`}
-           onClick={() => onViewDetails(employee)}>
+           onClick={() => onViewDetails?.(employee)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Avatar employee={employee} size="sm" />
@@ -396,6 +432,25 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
               {showCompliance && (
                 <ComplianceSection employee={employee} layout="list" />
               )}
+
+              {/* Violation Summary (list view) */}
+              {violationCount > 0 && (
+                <div className="mt-2 space-y-1">
+                  {(employee.violations || []).slice(0, 2).map((violation) => (
+                    <div key={violation.id} className="flex items-center text-xs text-red-700 dark:text-red-300">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      <span className="truncate max-w-[140px]" title={violation.description || violation.type}>
+                        {(violation.type || '').replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  ))}
+                  {violationCount > 2 && (
+                    <div className="text-xs text-red-600 dark:text-red-400">
+                      +{violationCount - 2} more
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           
@@ -415,53 +470,12 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
               )}
             </div>
             
-            <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-200 rounded transition-colors">
+            <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200 rounded-full transition-colors">
               <Eye className="w-4 h-4" />
             </button>
           </div>
         </div>
       </div>
-    );
-  }
-
-  // Compact Layout
-  if (layout === 'compact') {
-    return (
-      <div className={`bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 p-3 hover:shadow-sm transition-all duration-200 cursor-pointer ${className}`}
-           onClick={() => onViewDetails(employee)}>
-        <div className="flex items-center space-x-3">
-          <Avatar employee={employee} size="sm" />
-          
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center space-x-2">
-              <h3 className="font-medium text-gray-900 dark:text-white truncate">{employee.name}</h3>
-              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10 flex-shrink-0`}>
-                {employee.riskLevel}
-              </span>
-              {/* Compact compliance section */}
-              {showCompliance && (
-                <ComplianceSection employee={employee} layout="compact" />
-              )}
-            </div>
-            <div className="flex items-center space-x-2 mt-1">
-              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{employee.department}</p>
-              {violationCount > 0 && (
-                <>
-                  <span className="text-xs text-gray-400">•</span>
-                  <span className="text-xs text-red-600">{violationCount} violations</span>
-                </>
-              )}
-            </div>
-          </div>
-          
-          <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-200 rounded transition-colors flex-shrink-0">
-            <Eye className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Fallback to grid layout
-  return null;
+    )
+  );
 };

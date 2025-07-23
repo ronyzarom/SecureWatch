@@ -204,6 +204,39 @@ router.get('/', async (req, res) => {
     const total = parseInt(countResult.rows[0].total);
     const totalPages = Math.ceil(total / limit);
 
+    // Get violations for all employees in this batch
+    const employeeIds = employeesResult.rows.map(row => row.id);
+    const violationsResult = await query(`
+      SELECT 
+        employee_id,
+        id,
+        type,
+        severity,
+        status,
+        description,
+        created_at
+      FROM violations
+      WHERE employee_id = ANY($1)
+        AND status = 'Active'
+      ORDER BY created_at DESC
+    `, [employeeIds]);
+
+    // Group violations by employee_id
+    const violationsByEmployee = violationsResult.rows.reduce((acc, violation) => {
+      if (!acc[violation.employee_id]) {
+        acc[violation.employee_id] = [];
+      }
+      acc[violation.employee_id].push({
+        id: violation.id,
+        type: violation.type,
+        severity: violation.severity,
+        status: violation.status,
+        description: violation.description,
+        createdAt: violation.created_at
+      });
+      return acc;
+    }, {});
+
     res.json({
       employees: employeesResult.rows.map(row => ({
         id: row.id,
@@ -218,7 +251,7 @@ router.get('/', async (req, res) => {
         photo: row.photo,
         violationCount: parseInt(row.violation_count),
         activeViolations: parseInt(row.active_violations),
-        violations: [], // Empty array for consistency
+        violations: violationsByEmployee[row.id] || [], // Actual violations data
         // Use real metrics from database instead of random data
         metrics: row.email_volume !== null ? {
           emailVolume: row.email_volume || 0,

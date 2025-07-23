@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Mail, Clock, User, Users, AlertTriangle, FileText } from 'lucide-react';
 import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
+import { HTMLViewer } from './HTMLViewer';
 
 interface EmailViewModalProps {
   emailId: string;
@@ -35,6 +36,12 @@ export const EmailViewModal: React.FC<EmailViewModalProps> = ({ emailId, isOpen,
   const [error, setError] = useState<string | null>(null);
   const [showHtml, setShowHtml] = useState(false);
 
+  // Determine if the email has HTML content, even if bodyHtml is empty
+  const htmlContent = email?.bodyHtml && email.bodyHtml.trim().length > 0
+    ? email.bodyHtml
+    : email?.bodyText || '';
+  const isHtmlContent = /<\/?[a-z][\s\S]*>/i.test(htmlContent);
+
   const fetchEmail = async () => {
     if (!emailId || !isOpen) return;
     
@@ -66,6 +73,18 @@ export const EmailViewModal: React.FC<EmailViewModalProps> = ({ emailId, isOpen,
   useEffect(() => {
     fetchEmail();
   }, [emailId, isOpen]);
+
+  // Automatically switch to HTML view when HTML content is detected on first load
+  useEffect(() => {
+    if (email) {
+      const hasHtml = /<\/?[a-z][\s\S]*>/i.test(htmlContent);
+      if (hasHtml && !showHtml) {
+        setShowHtml(true);
+      }
+    }
+    // We intentionally exclude showHtml from deps to avoid toggling back after user interaction
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email]);
 
   const formatTimeAgo = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -191,7 +210,7 @@ export const EmailViewModal: React.FC<EmailViewModalProps> = ({ emailId, isOpen,
               <div className="border border-gray-200 dark:border-gray-600 rounded-lg">
                 <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                   <h4 className="font-medium text-gray-900 dark:text-white">Email Content</h4>
-                  {email.bodyHtml && (
+                  {isHtmlContent && (
                     <div className="flex space-x-2">
                       <button
                         onClick={() => setShowHtml(false)}
@@ -210,11 +229,10 @@ export const EmailViewModal: React.FC<EmailViewModalProps> = ({ emailId, isOpen,
                 </div>
                 
                 <div className="p-4 max-h-96 overflow-y-auto">
-                  {showHtml && email.bodyHtml ? (
-                    <div 
-                      className="prose dark:prose-invert max-w-none"
-                      dangerouslySetInnerHTML={{ __html: email.bodyHtml }}
-                    />
+                  {showHtml && isHtmlContent ? (
+                    <div className="w-full h-96">
+                      <HTMLViewer htmlContent={htmlContent} />
+                    </div>
                   ) : (
                     <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-mono">
                       {email.bodyText || 'No text content available'}

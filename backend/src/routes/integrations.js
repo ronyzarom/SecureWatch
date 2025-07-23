@@ -5,6 +5,7 @@ const { query } = require('../utils/database');
 const office365Connector = require('../services/office365Connector');
 const teamsConnector = require('../services/teamsConnector');
 const googleWorkspaceConnector = require('../services/googleWorkspaceConnector');
+const slackConnector = require('../services/slackConnector');
 
 /**
  * @swagger
@@ -1704,6 +1705,690 @@ router.get('/google-workspace/sync/status', requireAuth, async (req, res) => {
   }
 });
 
+// =============================================================================
+// SLACK CONFIGURATION
+// =============================================================================
+
+/**
+ * @swagger
+ * /api/integrations/slack/config:
+ *   get:
+ *     summary: Get Slack configuration
+ *     description: Retrieve current Slack integration settings
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: Slack configuration retrieved successfully
+ */
+router.get('/slack/config', requireAdmin, async (req, res) => {
+  try {
+    const configResult = await query(`
+      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+    `);
+
+    if (configResult.rows.length === 0) {
+      return res.json({
+        isConfigured: false,
+        isActive: false,
+        syncEnabled: true,
+        syncFrequencyHours: 24,
+        maxMessagesPerChannel: 200,
+        daysBackToSync: 7,
+        syncPrivateChannels: false,
+        status: 'not_configured',
+        workspaceName: '',
+        workspaceId: '',
+        botUserId: ''
+      });
+    }
+
+    const config = configResult.rows[0];
+
+    // Determine if properly configured
+    const isConfigured = Boolean(
+      config.bot_token && 
+      config.workspace_id &&
+      config.client_id &&
+      config.client_secret
+    );
+
+    // Determine status
+    let status = 'not_configured';
+    if (isConfigured) {
+      if (config.is_active) {
+        status = 'connected';
+      } else {
+        status = 'disabled';
+      }
+    }
+
+    res.json({
+      isConfigured,
+      isActive: Boolean(config.is_active),
+      syncEnabled: Boolean(config.sync_enabled),
+      syncFrequencyHours: config.sync_frequency_hours,
+      maxMessagesPerChannel: config.max_messages_per_channel,
+      daysBackToSync: config.days_back_to_sync,
+      syncPrivateChannels: Boolean(config.sync_private_channels),
+      lastSync: config.last_sync_at,
+      lastSyncStatus: config.last_sync_status,
+      status,
+      workspaceName: config.workspace_name || '',
+      workspaceId: config.workspace_id || '',
+      workspaceUrl: config.workspace_url || '',
+      botUserId: config.bot_user_id || '',
+      hasBotToken: Boolean(config.bot_token),
+      hasClientSecret: Boolean(config.client_secret)
+    });
+
+  } catch (error) {
+    console.error('Get Slack config error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch Slack configuration',
+      code: 'SLACK_CONFIG_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/integrations/slack/config:
+ *   put:
+ *     summary: Update Slack configuration
+ *     description: Update Slack integration settings
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: Slack configuration updated successfully
+ */
+router.put('/slack/config', requireAdmin, async (req, res) => {
+  try {
+    const {
+      botToken,
+      userToken,
+      clientId,
+      clientSecret,
+      signingSecret,
+      appId,
+      workspaceId,
+      isActive,
+      syncEnabled,
+      syncFrequencyHours,
+      maxMessagesPerChannel,
+      daysBackToSync,
+      syncPrivateChannels
+    } = req.body;
+
+    // Validate required fields
+    if (!botToken || !clientId || !clientSecret || !workspaceId) {
+      return res.status(400).json({
+        error: 'Bot Token, Client ID, Client Secret, and Workspace ID are required',
+        code: 'SLACK_INCOMPLETE_CONFIG'
+      });
+    }
+
+    // Update or insert configuration
+    await query(`
+      INSERT INTO slack_config (
+        bot_token, user_token, client_id, client_secret, signing_secret, app_id,
+        workspace_id, is_active, sync_enabled, sync_frequency_hours,
+        max_messages_per_channel, days_back_to_sync, sync_private_channels, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+      ON CONFLICT (workspace_id) DO UPDATE SET
+        bot_token = EXCLUDED.bot_token,
+        user_token = EXCLUDED.user_token,
+        client_id = EXCLUDED.client_id,
+        client_secret = EXCLUDED.client_secret,
+        signing_secret = EXCLUDED.signing_secret,
+        app_id = EXCLUDED.app_id,
+        is_active = EXCLUDED.is_active,
+        sync_enabled = EXCLUDED.sync_enabled,
+        sync_frequency_hours = EXCLUDED.sync_frequency_hours,
+        max_messages_per_channel = EXCLUDED.max_messages_per_channel,
+        days_back_to_sync = EXCLUDED.days_back_to_sync,
+        sync_private_channels = EXCLUDED.sync_private_channels,
+        updated_at = NOW()
+    `, [
+      botToken,
+      userToken || null,
+      clientId,
+      clientSecret,
+      signingSecret || null,
+      appId || null,
+      workspaceId,
+      Boolean(isActive),
+      Boolean(syncEnabled),
+      parseInt(syncFrequencyHours) || 24,
+      parseInt(maxMessagesPerChannel) || 200,
+      parseInt(daysBackToSync) || 7,
+      Boolean(syncPrivateChannels)
+    ]);
+
+    res.json({
+      success: true,
+      message: 'Slack configuration updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update Slack config error:', error);
+    res.status(500).json({
+      error: 'Failed to update Slack configuration',
+      code: 'SLACK_CONFIG_UPDATE_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/integrations/slack/test:
+ *   post:
+ *     summary: Test Slack connection
+ *     description: Test the Slack configuration and connectivity
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: Slack connection test results
+ */
+router.post('/slack/test', requireAdmin, async (req, res) => {
+  try {
+    // Load Slack configuration
+    const configResult = await query(`
+      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+    `);
+
+    if (configResult.rows.length === 0) {
+      return res.status(400).json({
+        error: 'Slack not configured',
+        code: 'SLACK_NOT_CONFIGURED'
+      });
+    }
+
+    const config = configResult.rows[0];
+
+    if (!config.bot_token || !config.client_id || !config.client_secret || !config.workspace_id) {
+      return res.status(400).json({
+        error: 'Slack configuration incomplete',
+        code: 'SLACK_INCOMPLETE_CONFIG'
+      });
+    }
+
+    // Initialize and test connection
+    const connectorConfig = {
+      botToken: config.bot_token,
+      userToken: config.user_token,
+      clientId: config.client_id,
+      clientSecret: config.client_secret,
+      signingSecret: config.signing_secret,
+      appId: config.app_id,
+      workspaceId: config.workspace_id
+    };
+
+    await slackConnector.initialize(connectorConfig);
+    const testResult = await slackConnector.testConnection();
+
+    // Update workspace info if test successful
+    if (testResult.success) {
+      await query(`
+        UPDATE slack_config SET
+          workspace_name = $1,
+          workspace_url = $2,
+          bot_user_id = $3,
+          updated_at = NOW()
+        WHERE workspace_id = $4
+      `, [
+        testResult.team || '',
+        testResult.url || '',
+        testResult.botUser || '',
+        config.workspace_id
+      ]);
+    }
+
+    res.json({
+      success: testResult.success,
+      message: testResult.message,
+      details: {
+        team: testResult.team,
+        botUser: testResult.botUser,
+        channelsFound: testResult.channelsFound,
+        testedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Slack connection test error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Slack connection test failed',
+      message: error.message,
+      code: 'SLACK_TEST_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/integrations/slack/sync:
+ *   post:
+ *     summary: Start Slack message synchronization
+ *     description: Sync Slack messages for security analysis
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: Slack sync started successfully
+ */
+router.post('/slack/sync', requireAdmin, async (req, res) => {
+  try {
+    const { daysBack = 7, maxMessagesPerChannel = 200, batchSize = 5 } = req.body;
+
+    // Check Slack configuration
+    const configResult = await query(`
+      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+    `);
+
+    if (configResult.rows.length === 0 || !configResult.rows[0].is_active) {
+      return res.status(400).json({
+        error: 'Slack integration not active',
+        code: 'SLACK_NOT_ACTIVE'
+      });
+    }
+
+    const config = configResult.rows[0];
+
+    if (!config.bot_token || !config.workspace_id) {
+      return res.status(400).json({
+        error: 'Slack configuration incomplete',
+        code: 'SLACK_INCOMPLETE_CONFIG'
+      });
+    }
+
+    // Initialize connector
+    const connectorConfig = {
+      botToken: config.bot_token,
+      userToken: config.user_token,
+      clientId: config.client_id,
+      clientSecret: config.client_secret,
+      signingSecret: config.signing_secret,
+      appId: config.app_id,
+      workspaceId: config.workspace_id
+    };
+
+    await slackConnector.initialize(connectorConfig);
+
+    // Store sync job info
+    const syncJobResult = await query(`
+      INSERT INTO slack_sync_jobs (
+        sync_type, status, parameters, started_at, started_by
+      ) VALUES ('messages', 'running', $1, NOW(), $2)
+      RETURNING id
+    `, [
+      JSON.stringify({ daysBack, maxMessagesPerChannel, batchSize }),
+      req.user.id
+    ]);
+
+    const syncJobId = syncJobResult.rows[0].id;
+
+    // Start synchronization (run in background)
+    const syncPromise = slackConnector.syncAllChannelMessages({
+      daysBack,
+      maxMessagesPerChannel,
+      batchSize
+    });
+
+    // Handle sync completion/error in background
+    syncPromise.then(async (result) => {
+      try {
+        await query(`
+          UPDATE slack_sync_jobs SET
+            status = 'completed',
+            completed_at = NOW(),
+            total_channels = $1,
+            processed_channels = $2,
+            total_messages = $3,
+            processed_messages = $4,
+            flagged_messages = $5,
+            results = $6
+          WHERE id = $7
+        `, [
+          result.totalChannels,
+          result.processedChannels,
+          result.totalMessages,
+          result.processedMessages,
+          result.violations,
+          JSON.stringify(result),
+          syncJobId
+        ]);
+
+        // Update config with last sync info
+        await query(`
+          UPDATE slack_config SET
+            last_sync_at = NOW(),
+            last_sync_status = 'success',
+            last_sync_error = NULL
+          WHERE workspace_id = $1
+        `, [config.workspace_id]);
+
+        console.log('✅ Slack sync job completed successfully:', result);
+
+      } catch (error) {
+        console.error('❌ Error updating Slack sync job completion:', error);
+      }
+    }).catch(async (error) => {
+      try {
+        await query(`
+          UPDATE slack_sync_jobs SET
+            status = 'failed',
+            completed_at = NOW(),
+            error_message = $1
+          WHERE id = $2
+        `, [error.message, syncJobId]);
+
+        // Update config with error info
+        await query(`
+          UPDATE slack_config SET
+            last_sync_at = NOW(),
+            last_sync_status = 'error',
+            last_sync_error = $1
+          WHERE workspace_id = $2
+        `, [error.message, config.workspace_id]);
+
+        console.error('❌ Slack sync job failed:', error);
+
+      } catch (updateError) {
+        console.error('❌ Error updating Slack sync job failure:', updateError);
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Slack message synchronization started',
+      syncJobId: syncJobId,
+      parameters: {
+        daysBack,
+        maxMessagesPerChannel,
+        batchSize
+      }
+    });
+
+  } catch (error) {
+    console.error('Slack sync start error:', error);
+    res.status(500).json({
+      error: 'Failed to start Slack synchronization',
+      message: error.message,
+      code: 'SLACK_SYNC_START_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/integrations/slack/sync/users:
+ *   post:
+ *     summary: Sync Slack users to employees table
+ *     description: Fetch all users from Slack workspace and sync them to the employees table
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: User synchronization completed
+ */
+router.post('/slack/sync/users', requireAdmin, async (req, res) => {
+  try {
+    // Load Slack configuration
+    const configResult = await query(`
+      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+    `);
+
+    if (configResult.rows.length === 0 || !configResult.rows[0].is_active) {
+      return res.status(400).json({
+        error: 'Slack integration not active',
+        code: 'SLACK_NOT_ACTIVE'
+      });
+    }
+
+    const config = configResult.rows[0];
+
+    if (!config.bot_token || !config.workspace_id) {
+      return res.status(400).json({
+        error: 'Slack configuration incomplete',
+        code: 'SLACK_INCOMPLETE_CONFIG'
+      });
+    }
+
+    // Initialize connector
+    const connectorConfig = {
+      botToken: config.bot_token,
+      userToken: config.user_token,
+      clientId: config.client_id,
+      clientSecret: config.client_secret,
+      signingSecret: config.signing_secret,
+      appId: config.app_id,
+      workspaceId: config.workspace_id
+    };
+
+    await slackConnector.initialize(connectorConfig);
+
+    // Store sync job info
+    const syncJobResult = await query(`
+      INSERT INTO slack_sync_jobs (
+        sync_type, status, parameters, started_at, started_by
+      ) VALUES ('users', 'running', $1, NOW(), $2)
+      RETURNING id
+    `, [
+      JSON.stringify({ syncType: 'users' }),
+      req.user.id
+    ]);
+
+    const syncJobId = syncJobResult.rows[0].id;
+
+    // Start user synchronization (run in background)
+    const syncPromise = slackConnector.syncUsersToEmployees();
+
+    // Handle sync completion/error
+    syncPromise.then(async (results) => {
+      await query(`
+        UPDATE slack_sync_jobs 
+        SET 
+          status = $1, 
+          completed_at = NOW(), 
+          total_users = $2,
+          processed_users = $3,
+          results = $4
+        WHERE id = $5
+      `, [
+        'completed', 
+        results.totalUsers,
+        results.newEmployees + results.updatedEmployees,
+        JSON.stringify(results), 
+        syncJobId
+      ]);
+
+      console.log('✅ Slack user sync job completed:', results);
+    }).catch(async (error) => {
+      await query(`
+        UPDATE slack_sync_jobs 
+        SET 
+          status = $1, 
+          completed_at = NOW(), 
+          error_message = $2
+        WHERE id = $3
+      `, ['failed', error.message, syncJobId]);
+
+      console.error('❌ Slack user sync job failed:', error);
+    });
+
+    res.json({
+      message: 'Slack user synchronization started',
+      syncJobId: syncJobId,
+      syncType: 'users',
+      startedAt: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Slack user sync error:', error);
+    res.status(500).json({
+      error: 'Failed to start Slack user sync',
+      message: error.message,
+      code: 'SLACK_USER_SYNC_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/integrations/slack/sync/status:
+ *   get:
+ *     summary: Get Slack sync status
+ *     description: Get current Slack synchronization status and progress
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ *     responses:
+ *       200:
+ *         description: Slack sync status retrieved successfully
+ */
+router.get('/slack/sync/status', requireAuth, async (req, res) => {
+  try {
+    // Get latest sync job
+    const syncJobResult = await query(`
+      SELECT * FROM slack_sync_jobs
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+
+    // Get config for last sync info
+    const configResult = await query(`
+      SELECT last_sync_at, last_sync_status, last_sync_error
+      FROM slack_config
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+
+    const syncJob = syncJobResult.rows.length > 0 ? syncJobResult.rows[0] : null;
+    const config = configResult.rows.length > 0 ? configResult.rows[0] : null;
+
+    res.json({
+      lastSync: config?.last_sync_at || null,
+      status: config?.last_sync_status || 'never',
+      error: config?.last_sync_error || null,
+      currentJob: syncJob ? {
+        id: syncJob.id,
+        syncType: syncJob.sync_type,
+        status: syncJob.status,
+        startedAt: syncJob.started_at,
+        completedAt: syncJob.completed_at,
+        totalChannels: syncJob.total_channels,
+        totalMessages: syncJob.total_messages,
+        processedMessages: syncJob.processed_messages,
+        flaggedMessages: syncJob.flagged_messages,
+        totalUsers: syncJob.total_users,
+        processedUsers: syncJob.processed_users,
+        parameters: syncJob.parameters
+      } : null
+    });
+
+  } catch (error) {
+    console.error('Get Slack sync status error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch Slack sync status',
+      code: 'SLACK_SYNC_STATUS_ERROR'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/integrations/slack/stats:
+ *   get:
+ *     summary: Get Slack integration statistics
+ *     description: Retrieve statistics about synchronized messages and analysis results
+ *     tags: [Integrations]
+ *     security:
+ *       - sessionAuth: []
+ */
+router.get('/slack/stats', requireAuth, async (req, res) => {
+  try {
+    // Default stats for when no data exists yet
+    const defaultStats = {
+      totalChannels: 0,
+      totalUsers: 0,
+      messagesProcessed: 0,
+      violationsDetected: 0,
+      riskDistribution: {
+        high: 0,
+        medium: 0,
+        low: 0
+      }
+    };
+
+    // Check if Slack is configured
+    const configResult = await query(`
+      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+    `);
+
+    if (configResult.rows.length === 0 || !configResult.rows[0].is_active) {
+      return res.json(defaultStats);
+    }
+
+    try {
+      // Get message statistics
+      const messageStatsResult = await query(`
+        SELECT 
+          COUNT(*) as total_messages,
+          COUNT(DISTINCT channel_id) as total_channels,
+          COUNT(DISTINCT sender_employee_id) as total_users,
+          COUNT(*) FILTER (WHERE risk_score >= 70) as high_risk,
+          COUNT(*) FILTER (WHERE risk_score >= 40 AND risk_score < 70) as medium_risk,
+          COUNT(*) FILTER (WHERE risk_score < 40) as low_risk
+        FROM slack_messages 
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+      `);
+
+      // Get violations count
+      const violationsResult = await query(`
+        SELECT COUNT(*) as total_violations
+        FROM slack_violations 
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+      `);
+
+      const messageStats = messageStatsResult.rows[0] || {};
+      const violationStats = violationsResult.rows[0] || {};
+
+      res.json({
+        totalChannels: parseInt(messageStats.total_channels) || 0,
+        totalUsers: parseInt(messageStats.total_users) || 0,
+        messagesProcessed: parseInt(messageStats.total_messages) || 0,
+        violationsDetected: parseInt(violationStats.total_violations) || 0,
+        riskDistribution: {
+          high: parseInt(messageStats.high_risk) || 0,
+          medium: parseInt(messageStats.medium_risk) || 0,
+          low: parseInt(messageStats.low_risk) || 0
+        }
+      });
+
+    } catch (tableError) {
+      // Tables might not exist yet or have no data
+      console.log('Slack stats tables not found or empty, returning default stats');
+      res.json(defaultStats);
+    }
+
+  } catch (error) {
+    console.error('Slack stats error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch Slack statistics',
+      code: 'SLACK_STATS_ERROR'
+    });
+  }
+});
+
 /**
  * @swagger
  * /api/integrations/status:
@@ -1729,6 +2414,11 @@ router.get('/status', async (req, res) => {
         status: 'not_configured'
       },
       google_workspace: {
+        isConfigured: false,
+        isActive: false,
+        status: 'not_configured'
+      },
+      slack: {
         isConfigured: false,
         isActive: false,
         status: 'not_configured'
@@ -1784,6 +2474,29 @@ router.get('/status', async (req, res) => {
       );
       
       integrations.google_workspace = {
+        isConfigured: isConfigured,
+        isActive: Boolean(config.is_active),
+        status: isConfigured 
+          ? (config.is_active ? 'connected' : 'disabled')
+          : 'not_configured'
+      };
+    }
+
+    // Check Slack configuration
+    const slackResult = await query(`
+      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+    `);
+
+    if (slackResult.rows.length > 0) {
+      const config = slackResult.rows[0];
+      const isConfigured = Boolean(
+        config.bot_token && 
+        config.workspace_id &&
+        config.client_id &&
+        config.client_secret
+      );
+      
+      integrations.slack = {
         isConfigured: isConfigured,
         isActive: Boolean(config.is_active),
         status: isConfigured 

@@ -23,6 +23,7 @@
   "dependencies": {
     "@azure/msal-node": "^3.6.3",
     "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@slack/web-api": "^7.9.3",
     "axios": "^1.10.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",

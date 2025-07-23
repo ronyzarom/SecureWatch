@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, RefreshCw, Settings, AlertTriangle, CheckCircle, XCircle, Mail, MessageSquare, Zap } from 'lucide-react';
+import { Building2, RefreshCw, Settings, AlertTriangle, CheckCircle, XCircle, Mail, MessageSquare, Zap, Hash } from 'lucide-react';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { Office365Config } from '../components/Office365Config';
 import { TeamsConfig } from '../components/TeamsConfig';
 import { GoogleWorkspaceConfig } from '../components/GoogleWorkspaceConfig';
+import { SlackConfig } from '../components/SlackConfig';
 import api from '../services/api';
 
 interface IntegrationStatus {
@@ -16,6 +17,7 @@ interface IntegrationsData {
   office365?: IntegrationStatus;
   teams?: IntegrationStatus;
   google_workspace?: IntegrationStatus;
+  slack?: IntegrationStatus;
 }
 
 export const IntegrationsPage: React.FC = () => {
@@ -23,6 +25,7 @@ export const IntegrationsPage: React.FC = () => {
   const [showOffice365Config, setShowOffice365Config] = useState(false);
   const [showTeamsConfig, setShowTeamsConfig] = useState(false);
   const [showGoogleWorkspaceConfig, setShowGoogleWorkspaceConfig] = useState(false);
+  const [showSlackConfig, setShowSlackConfig] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -376,6 +379,106 @@ export const IntegrationsPage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Slack Integration */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-xl transition-shadow">
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
+                  <Hash className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Slack</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Slack workspace monitoring</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {integrations.slack ? (
+                  <>
+                    {integrations.slack.status === 'connected' && (
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                    )}
+                    {integrations.slack.status === 'disabled' && (
+                      <XCircle className="w-5 h-5 text-yellow-500" />
+                    )}
+                    {integrations.slack.status === 'not_configured' && (
+                      <AlertTriangle className="w-5 h-5 text-red-500" />
+                    )}
+                  </>
+                ) : (
+                  <XCircle className="w-5 h-5 text-gray-400" />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                <span className={`text-sm font-medium ${
+                  integrations.slack?.status === 'connected' 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : integrations.slack?.status === 'disabled'
+                    ? 'text-yellow-600 dark:text-yellow-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.slack?.status === 'connected' && 'Connected & Active'}
+                  {integrations.slack?.status === 'disabled' && 'Configured but Disabled'}
+                  {integrations.slack?.status === 'not_configured' && 'Not Configured'}
+                  {!integrations.slack && 'Not Available'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Configuration</span>
+                <span className={`text-sm font-medium ${
+                  integrations.slack?.isConfigured 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {integrations.slack?.isConfigured ? 'Complete' : 'Incomplete'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Active</span>
+                <span className={`text-sm font-medium ${
+                  integrations.slack?.isActive 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}>
+                  {integrations.slack?.isActive ? 'Yes' : 'No'}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <p>• Monitor Slack conversations</p>
+                <p>• Track file sharing activities</p>
+                <p>• Detect inappropriate content</p>
+                <p>• AI-powered risk analysis</p>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowSlackConfig(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Configure</span>
+                </button>
+                
+                {integrations.slack?.status === 'connected' && (
+                  <div className="flex items-center space-x-1 text-green-600 dark:text-green-400 text-sm">
+                    <Zap className="w-4 h-4" />
+                    <span>Active</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Configuration Modals - Only render when needed */}
@@ -409,6 +512,13 @@ export const IntegrationsPage: React.FC = () => {
             setShowGoogleWorkspaceConfig(false);
             loadIntegrations();
           }}
+        />
+      )}
+
+      {showSlackConfig && (
+        <SlackConfig
+          onClose={() => setShowSlackConfig(false)}
+          isAuthenticated={true}
         />
       )}
     </div>

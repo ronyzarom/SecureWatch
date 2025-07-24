@@ -494,8 +494,8 @@ Analyze patterns and provide JSON response with:
   "communication_patterns": {...},
   "temporal_patterns": {...},
   "volume_anomalies": {...},
-  "risk_score": 0-40,
-  "confidence": 0-100,
+  "risk_score": [0-40 integer, NO decimals],
+  "confidence": [0-100 integer, NO decimals],
   "key_insights": [...],
   "reasoning": "..."
 }
@@ -524,7 +524,7 @@ ${employeeData.violations.map(v =>
 Identify contextual compliance issues and respond with JSON:
 {
   "contextual_violations": [...],
-  "risk_score": 0-30,
+  "risk_score": [0-30 integer, NO decimals],
   "contextual_factors": [...],
   "severity_justification": "...",
   "regulatory_nuances": [...],
@@ -548,9 +548,9 @@ ${this.extractBehavioralIndicators(employeeData)}
 Predict potential compliance violations and respond with JSON:
 {
   "predicted_risks": [...],
-  "overall_risk_score": 0-30,
+  "overall_risk_score": [0-30 integer, NO decimals],
   "risk_timeframe": "days/weeks/months",
-  "prediction_confidence": 0-100,
+  "prediction_confidence": [0-100 integer, NO decimals],
   "trend_analysis": {...},
   "preventive_actions": [...],
   "early_warnings": [...]

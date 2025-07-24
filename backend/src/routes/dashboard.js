@@ -89,6 +89,16 @@ router.get('/metrics', async (req, res) => {
         AND is_active = true
     `);
 
+    // Get policy execution statistics
+    const policyExecutionResult = await query(`
+      SELECT 
+        COUNT(*) as total_executions,
+        COUNT(CASE WHEN execution_status = 'success' THEN 1 END) as successful_executions,
+        COUNT(CASE WHEN execution_status = 'failed' THEN 1 END) as failed_executions,
+        COUNT(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as recent_executions
+      FROM policy_executions
+    `);
+
     // Get department distribution
     const departmentCounts = await query(`
       SELECT 
@@ -145,7 +155,12 @@ router.get('/metrics', async (req, res) => {
         totalViolations: parseInt(violationsResult.rows[0].total_violations),
         activeViolations: parseInt(violationsResult.rows[0].active_violations),
         criticalViolations: parseInt(violationsResult.rows[0].critical_violations),
-        recentActivity: parseInt(recentActivityResult.rows[0].recent_activity)
+        recentActivity: parseInt(recentActivityResult.rows[0].recent_activity),
+        // Policy execution statistics
+        totalPolicyExecutions: parseInt(policyExecutionResult.rows[0].total_executions),
+        successfulExecutions: parseInt(policyExecutionResult.rows[0].successful_executions),
+        failedExecutions: parseInt(policyExecutionResult.rows[0].failed_executions),
+        recentExecutions: parseInt(policyExecutionResult.rows[0].recent_executions)
       },
       riskDistribution: riskLevelMap,
       departmentBreakdown: departmentCounts.rows.map(row => ({
@@ -352,6 +367,30 @@ router.get('/activity', async (req, res) => {
       FROM violations v
       JOIN employees e ON v.employee_id = e.id
       WHERE v.created_at > NOW() - INTERVAL '${hours} hours'
+      
+      UNION ALL
+      
+      SELECT 
+        'policy_execution' as type,
+        pe.id,
+        CONCAT('Policy: ', sp.name) as event_type,
+        CASE pe.execution_status
+          WHEN 'success' THEN 'Low'
+          WHEN 'failed' THEN 'High'
+          ELSE 'Medium'
+        END as severity,
+        pe.created_at as timestamp,
+        e.name as employee_name,
+        e.department as employee_department,
+        CONCAT('Policy "', sp.name, '" ', pe.execution_status, 
+               CASE WHEN pe.completed_at IS NOT NULL 
+                    THEN CONCAT(' in ', EXTRACT(epoch FROM (pe.completed_at - pe.created_at))::int, 's')
+                    ELSE ''
+               END) as description
+      FROM policy_executions pe
+      JOIN security_policies sp ON pe.policy_id = sp.id
+      JOIN employees e ON pe.employee_id = e.id
+      WHERE pe.created_at > NOW() - INTERVAL '${hours} hours'
       
       UNION ALL
       

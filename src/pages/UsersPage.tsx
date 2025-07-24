@@ -14,8 +14,11 @@ import {
 } from 'lucide-react';
 import { SystemUser } from '../types';
 import { userAPI } from '../services/api';
+import { ConfirmationModal } from '../components/ConfirmationModal';
+import { useNotifications } from '../contexts/NotificationContext';
 
 export const UsersPage: React.FC = () => {
+  const { addToast } = useNotifications();
   const [users, setUsers] = useState<SystemUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +28,8 @@ export const UsersPage: React.FC = () => {
   const [showAddUser, setShowAddUser] = useState(false);
   const [selectedUser, setSelectedUser] = useState<SystemUser | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<SystemUser | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -43,13 +48,13 @@ export const UsersPage: React.FC = () => {
         // Transform backend data to match frontend interface
         const transformedUsers: SystemUser[] = (response.users || []).map((user: any) => ({
           id: user.id.toString(),
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          department: user.department,
+          name: String(user.name || ''),
+          email: String(user.email || ''),
+          role: String(user.role || 'viewer'),
+          department: String(user.department || ''),
           lastLogin: user.lastLogin,
           status: user.isActive ? 'active' : 'inactive',
-          permissions: getRolePermissions(user.role) // Generate permissions based on role
+          permissions: getRolePermissions(user.role || 'viewer') // Generate permissions based on role
         }));
 
         setUsers(transformedUsers);
@@ -113,11 +118,11 @@ export const UsersPage: React.FC = () => {
   // Handle opening edit user modal
   const handleEditUser = (user: SystemUser) => {
     setFormData({
-      name: user.name,
-      email: user.email,
+      name: String(user.name || ''),
+      email: String(user.email || ''),
       password: '', // Leave empty for edits - only fill if changing password
-      role: user.role,
-      department: user.department
+      role: String(user.role || 'viewer'),
+      department: String(user.department || '')
     });
     setSelectedUser(user);
     setShowAddUser(true);
@@ -130,12 +135,21 @@ export const UsersPage: React.FC = () => {
 
     try {
       if (selectedUser) {
-        // Update existing user - only include password if it's not empty
-        const updateData = { ...formData };
-        if (!updateData.password) {
-          delete updateData.password; // Don't update password if field is empty
-        }
+        // Update existing user - prepare data for backend
+        const updateData = {
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+          department: formData.department,
+          isActive: selectedUser.status === 'active' // Preserve current status
+        };
+        
         await userAPI.update(parseInt(selectedUser.id), updateData);
+        
+        // Handle password update separately if provided
+        if (formData.password && formData.password.trim()) {
+          await userAPI.resetPassword(parseInt(selectedUser.id), formData.password);
+        }
       } else {
         // Create new user
         await userAPI.create(formData);
@@ -145,23 +159,37 @@ export const UsersPage: React.FC = () => {
       const response = await userAPI.getAll();
       const transformedUsers: SystemUser[] = (response.users || []).map((user: any) => ({
         id: user.id.toString(),
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        department: user.department,
+        name: String(user.name || ''),
+        email: String(user.email || ''),
+        role: String(user.role || 'viewer'),
+        department: String(user.department || ''),
         lastLogin: user.lastLogin,
         status: user.isActive ? 'active' : 'inactive',
-        permissions: getRolePermissions(user.role)
+        permissions: getRolePermissions(user.role || 'viewer')
       }));
       setUsers(transformedUsers);
 
-      // Close modal
+      // Close modal and show success
       setShowAddUser(false);
       setSelectedUser(null);
       setError(null);
-    } catch (err) {
+      
+      addToast({
+        type: 'success',
+        title: selectedUser ? 'User Updated' : 'User Created',
+        message: `${formData.name} has been successfully ${selectedUser ? 'updated' : 'added'}.`
+      });
+      
+    } catch (err: any) {
       console.error('Error saving user:', err);
-      setError('Failed to save user. Please try again.');
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to save user';
+      setError(errorMessage);
+      
+      addToast({
+        type: 'error',
+        title: 'Save Failed',
+        message: errorMessage
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -227,7 +255,62 @@ export const UsersPage: React.FC = () => {
   };
 
   const handleDeleteUser = (userId: string) => {
-    setUsers(prev => prev.filter(user => user.id !== userId));
+    const user = users.find(u => u.id === userId);
+    if (user) {
+      setUserToDelete(user);
+      setShowDeleteModal(true);
+    }
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      console.log('Attempting to delete user:', userToDelete.id, userToDelete.name);
+      const deleteResponse = await userAPI.delete(parseInt(userToDelete.id));
+      console.log('Delete response:', deleteResponse);
+      
+      // Refresh users list from backend
+      const response = await userAPI.getAll();
+      const transformedUsers: SystemUser[] = (response.users || []).map((user: any) => ({
+        id: user.id.toString(),
+        name: String(user.name || ''),
+        email: String(user.email || ''),
+        role: String(user.role || 'viewer'),
+        department: String(user.department || ''),
+        lastLogin: user.lastLogin,
+        status: user.isActive ? 'active' : 'inactive',
+        permissions: getRolePermissions(user.role || 'viewer')
+      }));
+
+      setUsers(transformedUsers);
+      setShowDeleteModal(false);
+      setUserToDelete(null);
+      
+      addToast({
+        type: 'success',
+        title: 'User Deleted',
+        message: `${userToDelete.name} has been successfully removed from the system.`
+      });
+      
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to delete user';
+      
+      addToast({
+        type: 'error',
+        title: 'Delete Failed',
+        message: errorMessage
+      });
+      
+      setShowDeleteModal(false);
+      setUserToDelete(null);
+    }
+  };
+
+  const cancelDeleteUser = () => {
+    setShowDeleteModal(false);
+    setUserToDelete(null);
   };
 
   const handleToggleStatus = (userId: string) => {
@@ -558,6 +641,18 @@ export const UsersPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onConfirm={confirmDeleteUser}
+        onCancel={cancelDeleteUser}
+        title="Delete User"
+        message={`Are you sure you want to delete ${userToDelete?.name}? This action cannot be undone and will permanently remove the user from the system.`}
+        confirmText="Delete User"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 };

@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../utils/database');
 const { requireAuth, requireAnalyst, requireAdmin } = require('../middleware/auth');
+const { CategoryValidator, CategoryValidationError } = require('../utils/categoryValidation');
 
 const router = express.Router();
 
@@ -8,10 +9,60 @@ const router = express.Router();
 router.use(requireAuth);
 
 // =============================================================================
-// GET ALL THREAT CATEGORIES
+// ENHANCED ERROR HANDLER MIDDLEWARE
 // =============================================================================
-router.get('/', async (req, res) => {
+const handleCategoryError = (error, req, res, next) => {
+  console.error('Category route error:', error);
+
+  // Handle validation errors
+  if (error.isValidation) {
+    return res.status(400).json({
+      error: error.message,
+      code: error.code,
+      details: error.details
+    });
+  }
+
+  // Handle database constraint violations
+  if (error.code === '23505') {
+    return res.status(400).json({
+      error: 'Category with this name already exists',
+      code: 'CATEGORY_NAME_EXISTS',
+      details: { constraint: 'unique_name' }
+    });
+  }
+
+  if (error.code === '23503') {
+    return res.status(400).json({
+      error: 'Referenced entity does not exist',
+      code: 'FOREIGN_KEY_VIOLATION',
+      details: { constraint: error.constraint }
+    });
+  }
+
+  // Handle database connection errors
+  if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+    return res.status(503).json({
+      error: 'Database connection failed',
+      code: 'DATABASE_UNAVAILABLE'
+    });
+  }
+
+  // Default server error
+  res.status(500).json({
+    error: 'Internal server error',
+    code: 'INTERNAL_ERROR',
+    requestId: req.id || Date.now()
+  });
+};
+
+// =============================================================================
+// GET ALL THREAT CATEGORIES (Enhanced)
+// =============================================================================
+router.get('/', async (req, res, next) => {
   try {
+    // Sanitize and validate filters
+    const filters = CategoryValidator.sanitizeFilters(req.query);
     const {
       search = '',
       categoryType = 'all',
@@ -19,15 +70,22 @@ router.get('/', async (req, res) => {
       severity = 'all',
       isActive = 'all',
       includeKeywords = 'false',
-      includePolicyRules = 'false'
-    } = req.query;
+      includePolicyRules = 'false',
+      page = 1,
+      limit = 50
+    } = { ...req.query, ...filters };
+
+    // Validate pagination
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const offset = (pageNum - 1) * limitNum;
 
     let whereClause = '1=1';
     const queryParams = [];
     let paramCount = 0;
 
-    // Apply filters
-    if (search) {
+    // Apply filters with parameterized queries
+    if (search && search.length > 0) {
       paramCount++;
       whereClause += ` AND (tc.name ILIKE $${paramCount} OR tc.description ILIKE $${paramCount})`;
       queryParams.push(`%${search}%`);
@@ -57,7 +115,7 @@ router.get('/', async (req, res) => {
       queryParams.push(isActive === 'true');
     }
 
-    // Base query - PostgreSQL
+    // Enhanced query with statistics
     const categoriesResult = await query(`
       SELECT 
         tc.id,
@@ -73,22 +131,50 @@ router.get('/', async (req, res) => {
         tc.detection_patterns,
         tc.risk_multipliers,
         tc.is_active,
+        tc.is_system_category,
+        tc.created_by,
+        tc.created_at,
+        tc.updated_at,
+        u.name as created_by_name,
+        COUNT(ck.id) as keyword_count,
+        COUNT(pcr.id) as policy_rule_count,
+        COUNT(cdr.id) as detection_count,
+        COALESCE(AVG(cdr.risk_score), 0)::numeric(5,2) as avg_risk_score,
         json_agg(
-          json_build_object(
-            'keyword', ck.keyword,
-            'weight', ck.weight,
-            'isPhrase', ck.is_phrase
-          )
+          CASE WHEN ck.keyword IS NOT NULL THEN
+            json_build_object(
+              'keyword', ck.keyword,
+              'weight', ck.weight,
+              'isPhrase', ck.is_phrase
+            )
+          END
         ) FILTER (WHERE ck.keyword IS NOT NULL) as keywords
       FROM threat_categories tc
+      LEFT JOIN users u ON tc.created_by = u.id
       LEFT JOIN category_keywords ck ON tc.id = ck.category_id
+      LEFT JOIN policy_category_rules pcr ON tc.id = pcr.category_id
+      LEFT JOIN category_detection_results cdr ON tc.id = cdr.category_id 
+        AND cdr.analyzed_at >= NOW() - INTERVAL '30 days'
       WHERE ${whereClause}
       GROUP BY tc.id, tc.name, tc.description, tc.category_type, tc.industry, 
                tc.base_risk_score, tc.severity, tc.alert_threshold, 
                tc.investigation_threshold, tc.critical_threshold, 
-               tc.detection_patterns, tc.risk_multipliers, tc.is_active
+               tc.detection_patterns, tc.risk_multipliers, tc.is_active,
+               tc.is_system_category, tc.created_by, tc.created_at, tc.updated_at,
+               u.name
       ORDER BY tc.name
+      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+    `, [...queryParams, limitNum, offset]);
+
+    // Get total count for pagination
+    const countResult = await query(`
+      SELECT COUNT(*) as total
+      FROM threat_categories tc
+      WHERE ${whereClause}
     `, queryParams);
+
+    const totalCategories = parseInt(countResult.rows[0].total);
+    const totalPages = Math.ceil(totalCategories / limitNum);
 
     // Transform to frontend format
     const categories = categoriesResult.rows.map(row => ({
@@ -115,47 +201,31 @@ router.get('/', async (req, res) => {
         policyRuleCount: parseInt(row.policy_rule_count) || 0,
         detectionCount: parseInt(row.detection_count) || 0,
         avgRiskScore: parseFloat(row.avg_risk_score) || 0
-      }
+      },
+      keywords: row.keywords || []
     }));
-
-    // Include keywords if requested
-    if (includeKeywords === 'true' && categories.length > 0) {
-      const categoryIds = categories.map(c => c.id);
-      
-      const keywordsResult = await query(`
-        SELECT category_id, keyword, weight, is_phrase, context_required
-        FROM category_keywords
-        WHERE category_id = ANY($1)
-        ORDER BY weight DESC, keyword ASC
-      `, [categoryIds]);
-
-      const keywordsByCategory = keywordsResult.rows.reduce((acc, row) => {
-        if (!acc[row.category_id]) acc[row.category_id] = [];
-        acc[row.category_id].push({
-          keyword: row.keyword,
-          weight: parseFloat(row.weight),
-          isPhrase: row.is_phrase,
-          contextRequired: row.context_required
-        });
-        return acc;
-      }, {});
-
-      categories.forEach(category => {
-        category.keywords = keywordsByCategory[category.id] || [];
-      });
-    }
 
     res.json({
       categories,
-      total: categories.length
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalCategories,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1
+      },
+      filters: {
+        search,
+        categoryType,
+        industry,
+        severity,
+        isActive
+      }
     });
 
   } catch (error) {
-    console.error('Get categories error:', error);
-    res.status(500).json({
-      error: 'Failed to fetch threat categories',
-      code: 'CATEGORIES_FETCH_ERROR'
-    });
+    next(error);
   }
 });
 
@@ -280,58 +350,24 @@ router.get('/:id', async (req, res) => {
 });
 
 // =============================================================================
-// CREATE NEW THREAT CATEGORY
+// CREATE NEW THREAT CATEGORY (Enhanced)
 // =============================================================================
-router.post('/', requireAnalyst, async (req, res) => {
+router.post('/', requireAnalyst, async (req, res, next) => {
   try {
-    const {
-      name,
-      description,
-      categoryType = 'custom',
-      industry,
-      baseRiskScore = 50,
-      severity = 'Medium',
-      alertThreshold = 70,
-      investigationThreshold = 85,
-      criticalThreshold = 95,
-      detectionPatterns = {},
-      riskMultipliers = {},
-      keywords = [],
-      isActive = true
-    } = req.body;
+    // Validate and sanitize input data
+    const sanitizedData = CategoryValidator.validateCreateData(req.body);
 
-    // Validation
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({
-        error: 'Category name is required',
-        code: 'MISSING_CATEGORY_NAME'
-      });
-    }
-
-    if (!['predefined', 'custom', 'industry_specific'].includes(categoryType)) {
-      return res.status(400).json({
-        error: 'Invalid category type',
-        code: 'INVALID_CATEGORY_TYPE'
-      });
-    }
-
-    if (!['Critical', 'High', 'Medium', 'Low'].includes(severity)) {
-      return res.status(400).json({
-        error: 'Invalid severity level',
-        code: 'INVALID_SEVERITY'
-      });
-    }
-
-    // Check for duplicate names
+    // Check for duplicate names (case insensitive)
     const existingCategory = await query(`
-      SELECT id FROM threat_categories WHERE name = $1
-    `, [name.trim()]);
+      SELECT id, name FROM threat_categories WHERE LOWER(name) = LOWER($1)
+    `, [sanitizedData.name]);
 
     if (existingCategory.rows.length > 0) {
-      return res.status(400).json({
-        error: 'Category with this name already exists',
-        code: 'CATEGORY_NAME_EXISTS'
-      });
+      throw new CategoryValidationError(
+        'Category with this name already exists',
+        'CATEGORY_NAME_EXISTS',
+        { existingName: existingCategory.rows[0].name }
+      );
     }
 
     // Begin transaction
@@ -347,44 +383,30 @@ router.post('/', requireAnalyst, async (req, res) => {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *
       `, [
-        name.trim(),
-        description?.trim() || null,
-        categoryType,
-        industry?.trim() || null,
-        baseRiskScore,
-        severity,
-        alertThreshold,
-        investigationThreshold,
-        criticalThreshold,
-        JSON.stringify(detectionPatterns),
-        JSON.stringify(riskMultipliers),
-        isActive,
+        sanitizedData.name,
+        sanitizedData.description,
+        sanitizedData.categoryType,
+        sanitizedData.industry,
+        sanitizedData.baseRiskScore,
+        sanitizedData.severity,
+        sanitizedData.alertThreshold,
+        sanitizedData.investigationThreshold,
+        sanitizedData.criticalThreshold,
+        JSON.stringify(sanitizedData.detectionPatterns),
+        JSON.stringify(sanitizedData.riskMultipliers),
+        sanitizedData.isActive,
         req.user.id
       ]);
 
       const newCategory = categoryResult.rows[0];
 
       // Add keywords if provided
-      if (keywords.length > 0) {
-        for (const keywordItem of keywords) {
-          // Handle both string arrays and object arrays
-          let keyword, weight, isPhrase;
-          if (typeof keywordItem === 'string') {
-            keyword = keywordItem;
-            weight = 1.0;
-            isPhrase = false;
-          } else {
-            keyword = keywordItem.keyword;
-            weight = keywordItem.weight || 1.0;
-            isPhrase = keywordItem.isPhrase || false;
-          }
-          
-          if (keyword && keyword.trim()) {
-            await query(`
-              INSERT INTO category_keywords (category_id, keyword, weight, is_phrase)
-              VALUES ($1, $2, $3, $4)
-            `, [newCategory.id, keyword.trim(), weight, isPhrase]);
-          }
+      if (sanitizedData.keywords && sanitizedData.keywords.length > 0) {
+        for (const keywordData of sanitizedData.keywords) {
+          await query(`
+            INSERT INTO category_keywords (category_id, keyword, weight, is_phrase)
+            VALUES ($1, $2, $3, $4)
+          `, [newCategory.id, keywordData.keyword, keywordData.weight, keywordData.isPhrase]);
         }
       }
 
@@ -419,47 +441,30 @@ router.post('/', requireAnalyst, async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Create category error:', error);
-
-    if (error.code === '23505') {
-      return res.status(400).json({
-        error: 'Category with this name already exists',
-        code: 'CATEGORY_NAME_EXISTS'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Failed to create threat category',
-      code: 'CATEGORY_CREATE_ERROR'
-    });
+    next(error);
   }
 });
 
 // =============================================================================
-// UPDATE THREAT CATEGORY
+// UPDATE THREAT CATEGORY (Enhanced)
 // =============================================================================
-router.put('/:id', requireAnalyst, async (req, res) => {
+router.put('/:id', requireAnalyst, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const {
-      name,
-      description,
-      industry,
-      baseRiskScore,
-      severity,
-      alertThreshold,
-      investigationThreshold,
-      criticalThreshold,
-      detectionPatterns,
-      riskMultipliers,
-      keywords,
-      isActive
-    } = req.body;
 
-    // Check if category exists and user can edit it
+    // Validate ID parameter
+    const categoryId = parseInt(id);
+    if (isNaN(categoryId) || categoryId <= 0) {
+      throw new CategoryValidationError(
+        'Invalid category ID',
+        'INVALID_CATEGORY_ID'
+      );
+    }
+
+    // Check if category exists and get current data
     const existingCategory = await query(`
       SELECT * FROM threat_categories WHERE id = $1
-    `, [id]);
+    `, [categoryId]);
 
     if (existingCategory.rows.length === 0) {
       return res.status(404).json({
@@ -478,85 +483,73 @@ router.put('/:id', requireAnalyst, async (req, res) => {
       });
     }
 
+    // Validate and sanitize update data
+    const sanitizedData = CategoryValidator.validateUpdateData(req.body, category);
+
+    // Check for duplicate names if name is being changed
+    if (sanitizedData.name && sanitizedData.name.toLowerCase() !== category.name.toLowerCase()) {
+      const existingWithName = await query(`
+        SELECT id, name FROM threat_categories 
+        WHERE LOWER(name) = LOWER($1) AND id != $2
+      `, [sanitizedData.name, categoryId]);
+
+      if (existingWithName.rows.length > 0) {
+        throw new CategoryValidationError(
+          'Category with this name already exists',
+          'CATEGORY_NAME_EXISTS',
+          { existingName: existingWithName.rows[0].name }
+        );
+      }
+    }
+
     // Begin transaction
     await query('BEGIN');
 
     try {
-      // Build update query dynamically
+      // Build update query dynamically for only provided fields
       const updates = [];
       const values = [];
       let paramCount = 0;
 
-      if (name !== undefined) {
+      Object.keys(sanitizedData).forEach(key => {
+        if (key === 'keywords') return; // Handle keywords separately
+        
         paramCount++;
-        updates.push(`name = $${paramCount}`);
-        values.push(name.trim());
-      }
+        const dbColumn = {
+          name: 'name',
+          description: 'description',
+          industry: 'industry',
+          baseRiskScore: 'base_risk_score',
+          severity: 'severity',
+          alertThreshold: 'alert_threshold',
+          investigationThreshold: 'investigation_threshold',
+          criticalThreshold: 'critical_threshold',
+          detectionPatterns: 'detection_patterns',
+          riskMultipliers: 'risk_multipliers',
+          isActive: 'is_active'
+        }[key];
 
-      if (description !== undefined) {
-        paramCount++;
-        updates.push(`description = $${paramCount}`);
-        values.push(description?.trim() || null);
-      }
+        if (dbColumn) {
+          updates.push(`${dbColumn} = $${paramCount}`);
+          let value = sanitizedData[key];
+          
+          // JSON stringify objects
+          if (key === 'detectionPatterns' || key === 'riskMultipliers') {
+            value = JSON.stringify(value);
+          }
+          
+          values.push(value);
+        }
+      });
 
-      if (industry !== undefined) {
-        paramCount++;
-        updates.push(`industry = $${paramCount}`);
-        values.push(industry?.trim() || null);
-      }
-
-      if (baseRiskScore !== undefined) {
-        paramCount++;
-        updates.push(`base_risk_score = $${paramCount}`);
-        values.push(baseRiskScore);
-      }
-
-      if (severity !== undefined) {
-        paramCount++;
-        updates.push(`severity = $${paramCount}`);
-        values.push(severity);
-      }
-
-      if (alertThreshold !== undefined) {
-        paramCount++;
-        updates.push(`alert_threshold = $${paramCount}`);
-        values.push(alertThreshold);
-      }
-
-      if (investigationThreshold !== undefined) {
-        paramCount++;
-        updates.push(`investigation_threshold = $${paramCount}`);
-        values.push(investigationThreshold);
-      }
-
-      if (criticalThreshold !== undefined) {
-        paramCount++;
-        updates.push(`critical_threshold = $${paramCount}`);
-        values.push(criticalThreshold);
-      }
-
-      if (detectionPatterns !== undefined) {
-        paramCount++;
-        updates.push(`detection_patterns = $${paramCount}`);
-        values.push(JSON.stringify(detectionPatterns));
-      }
-
-      if (riskMultipliers !== undefined) {
-        paramCount++;
-        updates.push(`risk_multipliers = $${paramCount}`);
-        values.push(JSON.stringify(riskMultipliers));
-      }
-
-      if (isActive !== undefined) {
-        paramCount++;
-        updates.push(`is_active = $${paramCount}`);
-        values.push(isActive);
-      }
-
-      // Update category
+      // Add updated_at timestamp
       if (updates.length > 0) {
         paramCount++;
-        values.push(id);
+        updates.push(`updated_at = $${paramCount}`);
+        values.push(new Date());
+
+        paramCount++;
+        values.push(categoryId);
         
         await query(`
           UPDATE threat_categories 
@@ -566,62 +559,68 @@ router.put('/:id', requireAnalyst, async (req, res) => {
       }
 
       // Update keywords if provided
-      if (keywords !== undefined) {
+      if (sanitizedData.keywords !== undefined) {
         // Delete existing keywords
-        await query(`DELETE FROM category_keywords WHERE category_id = $1`, [id]);
+        await query(`DELETE FROM category_keywords WHERE category_id = $1`, [categoryId]);
 
         // Add new keywords
-        if (keywords.length > 0) {
-          for (const keywordItem of keywords) {
-            // Handle both string arrays and object arrays
-            let keyword, weight, isPhrase;
-            if (typeof keywordItem === 'string') {
-              keyword = keywordItem;
-              weight = 1.0;
-              isPhrase = false;
-            } else {
-              keyword = keywordItem.keyword;
-              weight = keywordItem.weight || 1.0;
-              isPhrase = keywordItem.isPhrase || false;
-            }
-            
-            if (keyword && keyword.trim()) {
-              await query(`
-                INSERT INTO category_keywords (category_id, keyword, weight, is_phrase)
-                VALUES ($1, $2, $3, $4)
-              `, [id, keyword.trim(), weight, isPhrase]);
-            }
+        if (sanitizedData.keywords.length > 0) {
+          for (const keywordData of sanitizedData.keywords) {
+            await query(`
+              INSERT INTO category_keywords (category_id, keyword, weight, is_phrase)
+              VALUES ($1, $2, $3, $4)
+            `, [categoryId, keywordData.keyword, keywordData.weight, keywordData.isPhrase]);
           }
         }
       }
 
       await query('COMMIT');
 
-      // Get updated category
+      // Get updated category with related data
       const updatedCategory = await query(`
-        SELECT * FROM threat_categories WHERE id = $1
-      `, [id]);
+        SELECT 
+          tc.*,
+          u.name as created_by_name,
+          json_agg(
+            CASE WHEN ck.keyword IS NOT NULL THEN
+              json_build_object(
+                'keyword', ck.keyword,
+                'weight', ck.weight,
+                'isPhrase', ck.is_phrase
+              )
+            END
+          ) FILTER (WHERE ck.keyword IS NOT NULL) as keywords
+        FROM threat_categories tc
+        LEFT JOIN users u ON tc.created_by = u.id
+        LEFT JOIN category_keywords ck ON tc.id = ck.category_id
+        WHERE tc.id = $1
+        GROUP BY tc.id, u.name
+      `, [categoryId]);
+
+      const updated = updatedCategory.rows[0];
 
       res.json({
         message: 'Threat category updated successfully',
         category: {
-          id: updatedCategory.rows[0].id,
-          name: updatedCategory.rows[0].name,
-          description: updatedCategory.rows[0].description,
-          categoryType: updatedCategory.rows[0].category_type,
-          industry: updatedCategory.rows[0].industry,
-          baseRiskScore: updatedCategory.rows[0].base_risk_score,
-          severity: updatedCategory.rows[0].severity,
-          alertThreshold: updatedCategory.rows[0].alert_threshold,
-          investigationThreshold: updatedCategory.rows[0].investigation_threshold,
-          criticalThreshold: updatedCategory.rows[0].critical_threshold,
-          detectionPatterns: updatedCategory.rows[0].detection_patterns,
-          riskMultipliers: updatedCategory.rows[0].risk_multipliers,
-          isActive: updatedCategory.rows[0].is_active,
-          isSystemCategory: updatedCategory.rows[0].is_system_category,
-          createdBy: updatedCategory.rows[0].created_by,
-          createdAt: updatedCategory.rows[0].created_at,
-          updatedAt: updatedCategory.rows[0].updated_at
+          id: updated.id,
+          name: updated.name,
+          description: updated.description,
+          categoryType: updated.category_type,
+          industry: updated.industry,
+          baseRiskScore: updated.base_risk_score,
+          severity: updated.severity,
+          alertThreshold: updated.alert_threshold,
+          investigationThreshold: updated.investigation_threshold,
+          criticalThreshold: updated.critical_threshold,
+          detectionPatterns: updated.detection_patterns,
+          riskMultipliers: updated.risk_multipliers,
+          isActive: updated.is_active,
+          isSystemCategory: updated.is_system_category,
+          createdBy: updated.created_by,
+          createdByName: updated.created_by_name,
+          createdAt: updated.created_at,
+          updatedAt: updated.updated_at,
+          keywords: updated.keywords || []
         }
       });
 
@@ -631,33 +630,30 @@ router.put('/:id', requireAnalyst, async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Update category error:', error);
-
-    if (error.code === '23505') {
-      return res.status(400).json({
-        error: 'Category with this name already exists',
-        code: 'CATEGORY_NAME_EXISTS'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Failed to update threat category',
-      code: 'CATEGORY_UPDATE_ERROR'
-    });
+    next(error);
   }
 });
 
 // =============================================================================
-// DELETE THREAT CATEGORY
+// DELETE THREAT CATEGORY (Enhanced)
 // =============================================================================
-router.delete('/:id', requireAdmin, async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res, next) => {
   try {
     const { id } = req.params;
+
+    // Validate ID parameter
+    const categoryId = parseInt(id);
+    if (isNaN(categoryId) || categoryId <= 0) {
+      throw new CategoryValidationError(
+        'Invalid category ID',
+        'INVALID_CATEGORY_ID'
+      );
+    }
 
     // Check if category exists
     const existingCategory = await query(`
       SELECT * FROM threat_categories WHERE id = $1
-    `, [id]);
+    `, [categoryId]);
 
     if (existingCategory.rows.length === 0) {
       return res.status(404).json({
@@ -668,39 +664,36 @@ router.delete('/:id', requireAdmin, async (req, res) => {
 
     const category = existingCategory.rows[0];
 
-    // Prevent deletion of system categories
-    if (category.is_system_category) {
-      return res.status(403).json({
-        error: 'Cannot delete system categories',
-        code: 'SYSTEM_CATEGORY_READONLY'
-      });
-    }
+    // Check usage before deletion
+    const usageCheck = await query(`
+      SELECT 
+        (SELECT COUNT(*) FROM policy_category_rules WHERE category_id = $1) as policy_count,
+        (SELECT COUNT(*) FROM category_detection_results 
+         WHERE category_id = $1 AND analyzed_at >= NOW() - INTERVAL '30 days') as recent_detections
+    `, [categoryId]);
 
-    // Check if category is used in policies
-    const policyUsage = await query(`
-      SELECT COUNT(*) as count FROM policy_category_rules WHERE category_id = $1
-    `, [id]);
+    const usageInfo = {
+      policyCount: parseInt(usageCheck.rows[0].policy_count),
+      recentDetections: parseInt(usageCheck.rows[0].recent_detections)
+    };
 
-    if (parseInt(policyUsage.rows[0].count) > 0) {
-      return res.status(400).json({
-        error: 'Cannot delete category that is used in policies',
-        code: 'CATEGORY_IN_USE'
-      });
-    }
+    // Validate deletion constraints
+    CategoryValidator.validateDeletion(category, usageInfo);
 
-    // Delete category (CASCADE will handle related records)
-    await query(`DELETE FROM threat_categories WHERE id = $1`, [id]);
+    // Perform deletion (CASCADE will handle related records)
+    await query(`DELETE FROM threat_categories WHERE id = $1`, [categoryId]);
 
     res.json({
-      message: 'Threat category deleted successfully'
+      message: 'Threat category deleted successfully',
+      deletedCategory: {
+        id: category.id,
+        name: category.name
+      },
+      usage: usageInfo
     });
 
   } catch (error) {
-    console.error('Delete category error:', error);
-    res.status(500).json({
-      error: 'Failed to delete threat category',
-      code: 'CATEGORY_DELETE_ERROR'
-    });
+    next(error);
   }
 });
 
@@ -979,5 +972,8 @@ router.post('/analyze-email', requireAnalyst, async (req, res) => {
     });
   }
 });
+
+// Apply error handler
+router.use(handleCategoryError);
 
 module.exports = router; 

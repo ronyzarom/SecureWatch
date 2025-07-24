@@ -62,6 +62,8 @@ router.get('/', async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
+    console.log('🔧 Debug: Violations filter request:', { status, severity, employeeId, sortBy, sortOrder });
+
     const offset = (page - 1) * limit;
     let whereConditions = [];
     let queryParams = [];
@@ -69,16 +71,19 @@ router.get('/', async (req, res) => {
 
     // Build WHERE conditions
     if (status) {
+      console.log('🔧 Debug: Adding status filter:', status);
       whereConditions.push(`v.status = $${paramIndex++}`);
       queryParams.push(status);
     }
 
     if (severity) {
+      console.log('🔧 Debug: Adding severity filter:', severity);
       whereConditions.push(`v.severity = $${paramIndex++}`);
       queryParams.push(severity);
     }
 
     if (employeeId) {
+      console.log('🔧 Debug: Adding employee filter:', employeeId);
       whereConditions.push(`v.employee_id = $${paramIndex++}`);
       queryParams.push(parseInt(employeeId));
     }
@@ -86,6 +91,9 @@ router.get('/', async (req, res) => {
     const whereClause = whereConditions.length > 0 
       ? `WHERE ${whereConditions.join(' AND ')}`
       : '';
+
+    console.log('🔧 Debug: Final WHERE clause:', whereClause);
+    console.log('🔧 Debug: Query parameters:', queryParams);
 
     // Get violations with employee data
     const violationsQuery = `
@@ -104,7 +112,9 @@ router.get('/', async (req, res) => {
 
     queryParams.push(parseInt(limit), offset);
 
+    console.log('🔧 Debug: Executing violations query with params:', queryParams);
     const result = await query(violationsQuery, queryParams);
+    console.log('🔧 Debug: Query returned', result.rows.length, 'violations');
 
     // Get total count for pagination
     const countQuery = `
@@ -115,6 +125,8 @@ router.get('/', async (req, res) => {
 
     const countResult = await query(countQuery, queryParams.slice(0, -2));
     const total = parseInt(countResult.rows[0].total);
+    
+    console.log('🔧 Debug: Total violations matching filter:', total);
 
     res.json({
       violations: result.rows.map(row => ({
@@ -387,6 +399,8 @@ router.put('/:id/status', requireAnalyst, async (req, res) => {
     const violationId = parseInt(req.params.id);
     const { status, reason, aiAssisted = false } = req.body;
 
+    console.log('🔧 Status update request:', { violationId, status, reason, userId: req.user?.id });
+
     if (isNaN(violationId)) {
       return res.status(400).json({
         error: 'Invalid violation ID',
@@ -401,6 +415,13 @@ router.put('/:id/status', requireAnalyst, async (req, res) => {
       });
     }
 
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Reason is required for status change',
+        code: 'MISSING_REASON'
+      });
+    }
+
     // Get current violation
     const currentResult = await query('SELECT * FROM violations WHERE id = $1', [violationId]);
     
@@ -412,31 +433,58 @@ router.put('/:id/status', requireAnalyst, async (req, res) => {
     }
 
     const currentViolation = currentResult.rows[0];
+    console.log('🔧 Current violation status:', currentViolation.status);
 
-    // Update violation with metadata for audit trail
+    // Prepare metadata for the status change
+    const statusChangeMetadata = {
+      changed_by: req.user.id,
+      change_reason: reason,
+      ai_assisted: aiAssisted,
+      status_change_timestamp: new Date().toISOString(),
+      previous_status: currentViolation.status
+    };
+
+    // Get existing metadata or create empty object
+    let existingMetadata = {};
+    try {
+      if (currentViolation.metadata) {
+        existingMetadata = typeof currentViolation.metadata === 'string' 
+          ? JSON.parse(currentViolation.metadata) 
+          : currentViolation.metadata;
+      }
+    } catch (e) {
+      console.warn('⚠️ Invalid existing metadata, starting fresh:', e.message);
+      existingMetadata = {};
+    }
+
+    // Merge metadata
+    const updatedMetadata = {
+      ...existingMetadata,
+      ...statusChangeMetadata
+    };
+
+    console.log('🔧 Updating with metadata:', updatedMetadata);
+
+    // Update violation
     const updateQuery = `
       UPDATE violations 
       SET 
-        status = $1::varchar,
-        resolved_at = CASE WHEN $1::varchar = 'Resolved' THEN NOW() ELSE resolved_at END,
+        status = $1,
+        resolved_at = CASE WHEN $4 = 'Resolved' THEN NOW() ELSE resolved_at END,
         updated_at = NOW(),
-        metadata = metadata || $2::jsonb
+        metadata = $2
       WHERE id = $3
       RETURNING *
     `;
 
-    const metadata = {
-      changed_by: req.user.id,
-      change_reason: reason,
-      ai_assisted: aiAssisted,
-      status_change_timestamp: new Date().toISOString()
-    };
-
     const result = await query(updateQuery, [
       status,
-      JSON.stringify(metadata),
-      violationId
+      JSON.stringify(updatedMetadata),
+      violationId,
+      status  // Add status again as 4th parameter for CASE condition
     ]);
+
+    console.log('✅ Status update successful');
 
     res.json({
       message: 'Violation status updated successfully',
@@ -450,16 +498,18 @@ router.put('/:id/status', requireAnalyst, async (req, res) => {
         from: currentViolation.status,
         to: status,
         reason,
-        changedBy: req.user.name,
+        changedBy: req.user.name || req.user.email,
         timestamp: new Date().toISOString()
       }
     });
 
   } catch (error) {
-    console.error('Update violation status error:', error);
+    console.error('❌ Update violation status error:', error);
+    console.error('❌ Stack trace:', error.stack);
     res.status(500).json({
       error: 'Failed to update violation status',
-      code: 'STATUS_UPDATE_ERROR'
+      code: 'STATUS_UPDATE_ERROR',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

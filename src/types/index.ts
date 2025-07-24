@@ -12,6 +12,15 @@ export interface Employee {
   connections: Connection[];
   metrics: EmployeeMetrics;
   
+  // Category Detection Results Summary
+  categoryDetections?: {
+    totalDetections: number;
+    uniqueCategories: number;
+    maxRiskScore: number;
+    criticalDetections: number;
+    hasDetections: boolean;
+  };
+  
   // Compliance fields
   complianceProfileId?: number;
   complianceProfile?: string;
@@ -429,4 +438,51 @@ export interface ComplianceEvaluation {
   violations: any[];
   recommendations: any[];
   retentionRequirements: Record<string, any>;
+}
+
+// Category Detection Types
+export interface CategoryDetection {
+  id: number;
+  emailId: number;
+  riskScore: number;
+  confidenceScore: number;
+  detectionContext: any;
+  matchedKeywords: string[];
+  patternMatches: string[];
+  analyzedAt: string;
+  analyzerVersion: string;
+  category: {
+    id: number;
+    name: string;
+    severity: 'Critical' | 'High' | 'Medium' | 'Low';
+    description: string;
+  };
+  email?: {
+    subject: string;
+    senderEmail: string;
+    sentAt: string;
+  };
+}
+
+export interface CategoryDetectionSummary {
+  employeeId: number;
+  period: { days: number };
+  summary: {
+    totalDetections: number;
+    uniqueCategories: number;
+    uniqueEmails: number;
+    avgRiskScore: number;
+    maxRiskScore: number;
+    criticalDetections: number;
+    highRiskDetections: number;
+  };
+  topCategories: Array<{
+    categoryId: number;
+    categoryName: string;
+    severity: string;
+    detectionCount: number;
+    avgRiskScore: number;
+    maxRiskScore: number;
+  }>;
+  detections: CategoryDetection[];
 }

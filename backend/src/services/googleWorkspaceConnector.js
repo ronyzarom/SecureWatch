@@ -414,6 +414,94 @@ class GoogleWorkspaceConnector {
   }
 
   /**
+   * Check for policy violations and create alerts for Gmail messages
+   */
+  async checkForGmailViolations(parsedMessage, riskAnalysis) {
+    try {
+      // Create violations for high-risk emails
+      if (riskAnalysis.riskScore >= 70) {
+        // Find employee by email
+        const employeeResult = await query(`
+          SELECT id FROM employees WHERE email = $1
+        `, [parsedMessage.from]);
+
+        if (employeeResult.rows.length === 0) {
+          console.log(`⚠️ No employee found for Gmail user: ${parsedMessage.from}`);
+          return;
+        }
+
+        const employeeId = employeeResult.rows[0].id;
+        const violationType = this.determineViolationType(riskAnalysis);
+        
+        const violationResult = await query(`
+          INSERT INTO violations (
+            employee_id, type, severity, description, 
+            source, metadata, status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING id
+        `, [
+          employeeId,
+          violationType,
+          riskAnalysis.riskScore >= 90 ? 'Critical' :
+          riskAnalysis.riskScore >= 80 ? 'High' : 'Medium',
+          `Gmail violation detected: ${parsedMessage.subject}`,
+          'gmail_analysis',
+          JSON.stringify({
+            messageId: parsedMessage.messageId,
+            riskScore: riskAnalysis.riskScore,
+            riskFactors: riskAnalysis.riskFactors || [],
+            recipients: parsedMessage.recipients?.length || 0
+          }),
+          'Active'
+        ]);
+
+        const violationId = violationResult.rows[0].id;
+        console.log(`🚨 Created Gmail violation ${violationId} for high-risk email: ${parsedMessage.subject}`);
+
+                 // 🆕 AUTO-TRIGGER ENHANCED POLICY EVALUATION
+         try {
+           const policyEvaluationEngine = require('./policyEvaluationEngine');
+           const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
+          if (policiesTriggered > 0) {
+            console.log(`🔥 Gmail policy evaluation triggered ${policiesTriggered} policies for violation ${violationId}`);
+          } else {
+            console.log(`📋 No Gmail policies triggered for violation ${violationId} (employee ${employeeId})`);
+          }
+        } catch (policyError) {
+          console.error(`❌ Failed to evaluate Gmail policies for violation ${violationId}:`, policyError);
+          // Don't fail the entire process if policy evaluation fails
+        }
+      }
+
+    } catch (error) {
+      console.error(`❌ Error creating Gmail violation:`, error);
+    }
+  }
+
+  /**
+   * Determine violation type based on risk analysis
+   */
+  determineViolationType(riskAnalysis) {
+    const factors = riskAnalysis.riskFactors || [];
+    const patterns = riskAnalysis.patterns || [];
+    
+    // Check for specific violation types based on analysis
+    if (factors.some(f => f.includes('data') || f.includes('confidential'))) {
+      return 'Data Breach Risk';
+    } else if (factors.some(f => f.includes('external') || f.includes('recipient'))) {
+      return 'External Communication Risk';
+    } else if (factors.some(f => f.includes('attachment') || f.includes('file'))) {
+      return 'File Transfer Risk';
+    } else if (patterns.some(p => p.category === 'security')) {
+      return 'Security Policy Violation';
+    } else if (patterns.some(p => p.category === 'compliance')) {
+      return 'Compliance Violation';
+    } else {
+      return 'Policy Violation';
+    }
+  }
+
+  /**
    * Sync Gmail messages for all users
    */
   async syncAllGmailMessages(options = {}) {
@@ -460,6 +548,9 @@ class GoogleWorkspaceConnector {
                 
                 // Store in database
                 await this.storeGmailMessage(parsedMessage, riskAnalysis);
+                
+                // Check for violations and trigger policies
+                await this.checkForGmailViolations(parsedMessage, riskAnalysis);
                 
                 // 🆕 Queue employee for AI compliance analysis (sync-triggered)
                 if (parsedMessage.from) {

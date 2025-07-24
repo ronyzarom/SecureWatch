@@ -311,6 +311,15 @@ async function startServer() {
     console.log('⚠️  Database initialization skipped:', error.message);
   }
 
+  // Start background services
+  console.log('🔧 Starting background services...');
+  try {
+    policyActionExecutor.start();
+    console.log('   ✅ Policy Action Executor started');
+  } catch (error) {
+    console.log('   ⚠️  Policy Action Executor failed to start:', error.message);
+  }
+
   // Start the server
   const server = app.listen(PORT, HOST, () => {
     console.log('');

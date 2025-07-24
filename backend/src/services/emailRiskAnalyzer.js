@@ -117,7 +117,7 @@ class EmailRiskAnalyzer {
   }
 
   /**
-   * Main email analysis function
+   * Main email analysis function - Enhanced with Database Threat Categories
    * @param {Object} email - Email object to analyze
    * @param {Object} employeeProfile - Employee's historical data
    * @returns {Object} Risk analysis results
@@ -132,15 +132,159 @@ class EmailRiskAnalyzer {
       recommendations: [],
       violations: [],
       confidence: 0,
-      analyzedAt: new Date().toISOString()
+      analyzedAt: new Date().toISOString(),
+      // Enhanced fields for database category analysis
+      categoryAnalysis: [],
+      detectionMethod: 'hybrid', // 'legacy', 'database', 'hybrid'
+      databaseCategoriesUsed: false
     };
 
     try {
-      // 1. Content Analysis
+      console.log(`🔍 Enhanced email analysis starting for: ${email.subject || 'No subject'}`);
+
+      // 🆕 ENHANCED: Fetch active threat categories from database
+      let databaseCategories = [];
+      try {
+        const { query } = require('../utils/database');
+        const categoriesResult = await query(`
+          SELECT 
+            tc.id,
+            tc.name,
+            tc.description,
+            tc.category_type,
+            tc.industry,
+            tc.base_risk_score,
+            tc.severity,
+            tc.alert_threshold,
+            tc.investigation_threshold,
+            tc.critical_threshold,
+            tc.detection_patterns,
+            tc.risk_multipliers,
+            tc.is_active,
+            COALESCE(
+              (SELECT jsonb_agg(
+                jsonb_build_object(
+                  'keyword', ck.keyword,
+                  'weight', ck.weight,
+                  'isPhrase', ck.is_phrase,
+                  'contextRequired', ck.context_required
+                )
+              ) FROM category_keywords ck WHERE ck.category_id = tc.id),
+              '[]'::jsonb
+            ) as keywords
+          FROM threat_categories tc
+          WHERE tc.is_active = true
+          ORDER BY tc.base_risk_score DESC, tc.name ASC
+        `);
+
+        databaseCategories = categoriesResult.rows.map(row => ({
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          categoryType: row.category_type,
+          industry: row.industry,
+          baseRiskScore: row.base_risk_score,
+          severity: row.severity,
+          alertThreshold: row.alert_threshold,
+          investigationThreshold: row.investigation_threshold,
+          criticalThreshold: row.critical_threshold,
+          detectionPatterns: row.detection_patterns,
+          riskMultipliers: row.risk_multipliers,
+          isActive: row.is_active,
+          keywords: row.keywords || []
+        }));
+
+        if (databaseCategories.length > 0) {
+          analysis.databaseCategoriesUsed = true;
+          console.log(`📚 Loaded ${databaseCategories.length} database threat categories`);
+        }
+      } catch (dbError) {
+        console.warn('⚠️ Could not fetch database categories, falling back to legacy analysis:', dbError.message);
+        analysis.detectionMethod = 'legacy';
+      }
+
+      // 🆕 ENHANCED: Database Category Analysis (if available)
+      if (databaseCategories.length > 0) {
+        try {
+          console.log('🤖 Running database category analysis...');
+          const categoryResults = await this.analyzeWithCustomCategories(email, databaseCategories);
+          
+          if (categoryResults.length > 0) {
+            analysis.categoryAnalysis = categoryResults;
+            
+            // 🔧 IMPROVED: Only consider categories with meaningful risk scores (>= 30)
+            const significantResults = categoryResults.filter(result => 
+              (result.finalRiskScore || result.riskScore || 0) >= 30
+            );
+            
+            if (significantResults.length > 0) {
+              // Add category-specific risk scores only for significant threats
+              const categoryRiskScore = significantResults.reduce((total, result) => {
+                return total + (result.finalRiskScore || result.riskScore || 0);
+              }, 0);
+              
+              // 🔧 IMPROVED: Implement risk score normalization and contribution limits
+              let normalizedCategoryScore;
+              
+              if (significantResults.length === 1) {
+                // Single category: use 70% of its score
+                normalizedCategoryScore = Math.round(categoryRiskScore * 0.7);
+              } else if (significantResults.length <= 3) {
+                // 2-3 categories: average and boost slightly  
+                normalizedCategoryScore = Math.round((categoryRiskScore / significantResults.length) * 1.2);
+              } else {
+                // 4+ categories: average with diminishing returns
+                normalizedCategoryScore = Math.round((categoryRiskScore / significantResults.length) * 1.1);
+              }
+              
+              // Cap database category contribution at 60 points max
+              normalizedCategoryScore = Math.min(60, normalizedCategoryScore);
+              
+              // Weight database analysis at 40% (reduced from 60%) for more conservative scoring
+              analysis.riskScore += Math.round(normalizedCategoryScore * 0.4);
+              
+              // Add category-specific factors and violations only for significant results
+              significantResults.forEach(result => {
+                analysis.riskFactors.push(`${result.categoryName}: ${result.reasoning || 'Significant threat pattern detected'}`);
+                
+                if (result.violations && result.violations.length > 0) {
+                  analysis.violations.push(...result.violations);
+                }
+                
+                if (result.detectedPatterns && result.detectedPatterns.length > 0) {
+                  analysis.patterns.push({
+                    category: result.categoryName,
+                    matches: result.detectedPatterns,
+                    severity: result.categoryName.includes('Critical') ? 'Critical' : 'High',
+                    source: 'database_category',
+                    riskScore: result.finalRiskScore || result.riskScore
+                  });
+                }
+                
+                if (result.recommendations && result.recommendations.length > 0) {
+                  analysis.recommendations.push(...result.recommendations);
+                }
+              });
+              
+              console.log(`✅ Database category analysis completed: ${significantResults.length}/${categoryResults.length} categories triggered (threshold >= 30)`);
+            } else {
+              console.log(`📊 Database category analysis completed: No significant threats detected (all scores < 30)`);
+            }
+          }
+        } catch (categoryError) {
+          console.error('❌ Error in database category analysis:', categoryError);
+          analysis.riskFactors.push('Database category analysis error occurred');
+        }
+      }
+
+      // EXISTING ANALYSIS METHODS (Enhanced with weighting)
+      console.log('📊 Running legacy pattern analysis...');
+
+      // 1. Content Analysis (weighted at 50% since database analysis is now more conservative)
       const contentRisk = this.analyzeContent(email);
-      analysis.riskScore += contentRisk.score;
+      analysis.riskScore += Math.round(contentRisk.score * 0.5);
       analysis.riskFactors.push(...contentRisk.factors);
-      analysis.patterns.push(...contentRisk.patterns);
+      analysis.patterns.push(...contentRisk.patterns.map(p => ({...p, source: 'legacy_pattern'})));
       analysis.violations.push(...contentRisk.violations);
 
       // 2. Recipient Analysis
@@ -151,7 +295,7 @@ class EmailRiskAnalyzer {
 
       // 3. Timing Analysis
       const timingRisk = this.analyzeTiming(email);
-      analysis.riskScore *= timingRisk.multiplier;
+      analysis.riskScore += timingRisk.score; // Changed from multiplication to addition
       analysis.riskFactors.push(...timingRisk.factors);
 
       // 4. Attachment Analysis
@@ -183,21 +327,55 @@ class EmailRiskAnalyzer {
       analysis.violations.push(...dlpRisk.violations);
 
       // 9. Calculate final risk level and confidence
-      analysis.riskScore = Math.min(analysis.riskScore, 100); // Cap at 100
+      // Ensure riskScore is a valid integer between 0-100 for database constraint
+      analysis.riskScore = this.validateAndFixRiskScore(analysis.riskScore);
       analysis.riskLevel = this.calculateRiskLevel(analysis.riskScore);
       analysis.confidence = this.calculateConfidence(analysis);
 
-      // 10. Generate recommendations
-      analysis.recommendations = this.generateRecommendations(analysis);
+      // 🆕 ENHANCED: Adjust confidence based on detection methods used
+      if (analysis.databaseCategoriesUsed && analysis.categoryAnalysis.length > 0) {
+        analysis.confidence = Math.min(100, analysis.confidence + 15); // Boost confidence with database analysis
+        analysis.detectionMethod = analysis.patterns.some(p => p.source === 'legacy_pattern') ? 'hybrid' : 'database';
+      }
 
+      // 10. Generate enhanced recommendations
+      analysis.recommendations = this.generateEnhancedRecommendations(analysis);
+
+      console.log(`🎯 Enhanced analysis completed: Score ${analysis.riskScore}, Method: ${analysis.detectionMethod}, Categories: ${analysis.categoryAnalysis.length}`);
+      
       return analysis;
 
     } catch (error) {
-      console.error('Error in email analysis:', error);
-      analysis.riskFactors.push('Analysis error occurred');
+      console.error('Error in enhanced email analysis:', error);
+      analysis.riskFactors.push('Enhanced analysis error occurred');
       analysis.confidence = 0;
+      analysis.detectionMethod = 'error';
+      // Ensure we return a valid score even on error
+      analysis.riskScore = 0;
       return analysis;
     }
+  }
+
+  /**
+   * Validate and fix risk score to ensure database constraint compliance
+   * Risk score must be an integer between 0-100 for PostgreSQL constraint
+   */
+  validateAndFixRiskScore(score) {
+    // Handle null, undefined, or NaN values
+    if (score === null || score === undefined || isNaN(score)) {
+      return 0;
+    }
+
+    // Ensure it's a number
+    const numericScore = typeof score === 'number' ? score : parseFloat(score);
+    
+    // Handle invalid conversions
+    if (isNaN(numericScore)) {
+      return 0;
+    }
+
+    // Round to integer and clamp to 0-100 range
+    return Math.round(Math.max(0, Math.min(100, numericScore)));
   }
 
   /**
@@ -408,6 +586,62 @@ class EmailRiskAnalyzer {
   }
 
   /**
+   * Extract JSON from LLM response, handling markdown code blocks
+   * @param {string} content - Raw LLM response content
+   * @returns {object} Parsed JSON object
+   */
+  extractJSONFromLLMResponse(content) {
+    try {
+      // First, try to parse as pure JSON
+      return JSON.parse(content);
+    } catch (error) {
+      // If that fails, try to extract JSON from markdown code blocks
+      try {
+        // Look for ```json...``` or ```...``` blocks
+        const jsonBlockRegex = /```(?:json)?\s*\n?([\s\S]*?)\n?```/;
+        const match = content.match(jsonBlockRegex);
+        
+        if (match && match[1]) {
+          return JSON.parse(match[1].trim());
+        }
+        
+        // Try to find JSON-like content between { and }
+        const jsonContentRegex = /\{[\s\S]*\}/;
+        const jsonMatch = content.match(jsonContentRegex);
+        
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        
+        // If no JSON found, return a default structure
+        console.warn('Could not extract JSON from LLM response, using fallback');
+        return {
+          risk_score: 0,
+          confidence: 0,
+          reasoning: 'LLM response parsing failed',
+          detected_patterns: [],
+          violations: [],
+          recommendations: []
+        };
+        
+      } catch (extractionError) {
+        console.error('Failed to extract JSON from LLM response:', extractionError.message);
+        console.error('Raw content:', content.substring(0, 200) + '...');
+        
+        // Return safe fallback
+        return {
+          risk_score: 0,
+          confidence: 0,
+          reasoning: 'LLM response parsing failed completely',
+          detected_patterns: [],
+          violations: [],
+          recommendations: []
+        };
+      }
+    }
+  }
+
+  /**
    * LLM-Powered Category Analysis
    * Uses sophisticated AI to analyze email content for specific threat categories
    */
@@ -427,7 +661,7 @@ class EmailRiskAnalyzer {
         messages: [
           {
             role: "system",
-            content: "You are a cybersecurity expert analyzing employee emails for security threats. Provide precise, actionable analysis."
+            content: "You are a cybersecurity expert analyzing employee emails for security threats. Provide precise, actionable analysis. ALWAYS respond with valid JSON only, no markdown formatting."
           },
           {
             role: "user", 
@@ -436,7 +670,8 @@ class EmailRiskAnalyzer {
         ]
       });
 
-      const analysis = JSON.parse(response.choices[0].message.content);
+      // 🔧 FIXED: Use robust JSON extraction instead of direct JSON.parse
+      const analysis = this.extractJSONFromLLMResponse(response.choices[0].message.content);
       
       return {
         categoryId: category.id,
@@ -487,13 +722,16 @@ ANALYSIS TASK:
 
 Respond with JSON in this exact format:
 {
-  "risk_score": [0-100 integer],
-  "confidence": [0-100 integer],
+  "risk_score": [MUST be whole number integer 0-100, NO decimals],
+  "confidence": [MUST be whole number integer 0-100, NO decimals],
   "reasoning": "[detailed explanation of analysis]",
   "detected_patterns": ["pattern1", "pattern2"],
   "violations": ["violation1", "violation2"],
   "recommendations": ["recommendation1", "recommendation2"]
-}`;
+}
+
+CRITICAL: risk_score and confidence MUST be integers (0, 1, 2, ..., 100). 
+DO NOT use decimal numbers like 67.5 or 89.3. Use whole numbers only.`;
 
     // Add category-specific guidance
     if (category.name.toLowerCase().includes('data exfiltration')) {
@@ -575,6 +813,139 @@ Respond with JSON in this exact format:
     }
     
     return results;
+  }
+
+  /**
+   * Enhanced category analysis with policy violation triggers
+   */
+  async analyzeWithCustomCategoriesAndTriggerPolicies(email, categories, employeeId) {
+    const results = await this.analyzeWithCustomCategories(email, categories);
+    
+    // Store detection results and trigger policies for high-risk detections
+    for (const result of results) {
+      try {
+        // Store the detection result
+        await this.storeCategoryDetectionResult(email, result, employeeId);
+        
+        // Check if this detection should trigger a policy violation
+        if (result.triggersCritical || result.triggersAlert || result.triggersInvestigation) {
+          await this.createCategoryViolation(email, result, employeeId);
+        }
+        
+      } catch (error) {
+        console.error(`Error processing category detection for ${result.categoryName}:`, error);
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Store category detection result in database
+   */
+  async storeCategoryDetectionResult(email, result, employeeId) {
+    try {
+      const { query } = require('../utils/database');
+      
+      await query(`
+        INSERT INTO category_detection_results (
+          email_id, employee_id, category_id, risk_score, confidence_score,
+          detection_context, matched_keywords, pattern_matches,
+          analyzed_at, analyzer_version
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
+      `, [
+        email.id,
+        employeeId,
+        result.categoryId,
+        result.finalRiskScore || result.riskScore,
+        result.confidence,
+        JSON.stringify({
+          analysisMethod: result.llmAnalysis ? 'LLM' : 'Keywords',
+          triggersAlert: result.triggersAlert,
+          triggersInvestigation: result.triggersInvestigation,
+          triggersCritical: result.triggersCritical,
+          reasoning: result.reasoning
+        }),
+        JSON.stringify(result.matchedKeywords || []),
+        JSON.stringify(result.detectedPatterns || []),
+        '1.0.0'
+      ]);
+      
+    } catch (error) {
+      console.error('Error storing category detection result:', error);
+    }
+  }
+
+  /**
+   * Create violation for category detection that exceeds thresholds
+   */
+  async createCategoryViolation(email, result, employeeId) {
+    try {
+      const { query } = require('../utils/database');
+      
+      // Determine violation severity based on result thresholds
+      let severity = 'Low';
+      let violationType = `category_detection_${result.categoryName.toLowerCase().replace(/\s+/g, '_')}`;
+      
+      if (result.triggersCritical) {
+        severity = 'Critical';
+      } else if (result.triggersAlert) {
+        severity = 'High';
+      } else if (result.triggersInvestigation) {
+        severity = 'Medium';
+      }
+      
+      // Create the violation
+      const violationResult = await query(`
+        INSERT INTO violations (
+          employee_id, type, severity, description, 
+          source, metadata, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+      `, [
+        employeeId,
+        violationType,
+        severity,
+        `Category threat detected: ${result.categoryName} in email "${email.subject || 'No subject'}"`,
+        'category_detection',
+        JSON.stringify({
+          emailId: email.id,
+          categoryId: result.categoryId,
+          categoryName: result.categoryName,
+          riskScore: result.finalRiskScore || result.riskScore,
+          confidence: result.confidence,
+          analysisMethod: result.llmAnalysis ? 'LLM' : 'Keywords',
+          reasoning: result.reasoning,
+          detectedPatterns: result.detectedPatterns,
+          triggersAlert: result.triggersAlert,
+          triggersInvestigation: result.triggersInvestigation,
+          triggersCritical: result.triggersCritical
+        }),
+        'Active'
+      ]);
+
+      const violationId = violationResult.rows[0].id;
+      console.log(`🚨 Created category violation ${violationId} for ${result.categoryName}: ${email.subject}`);
+
+      // 🔥 TRIGGER POLICY EVALUATION
+      try {
+        const policyEvaluationEngine = require('./policyEvaluationEngine');
+        const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
+        if (policiesTriggered > 0) {
+          console.log(`🔥 Category detection triggered ${policiesTriggered} policies for violation ${violationId}`);
+        } else {
+          console.log(`📋 No policies triggered for category violation ${violationId} (employee ${employeeId})`);
+        }
+      } catch (policyError) {
+        console.error(`❌ Failed to evaluate policies for category violation ${violationId}:`, policyError);
+      }
+
+      return violationId;
+
+    } catch (error) {
+      console.error('Error creating category violation:', error);
+      return null;
+    }
   }
 
   /**
@@ -683,13 +1054,32 @@ Respond with JSON in this exact format:
    * Helper: Check if email has external recipients
    */
   hasExternalRecipients(email) {
-    // This would need to be enhanced with actual domain checking
-    const externalDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'];
-    const recipients = email.recipients || [];
-    
-    return recipients.some(recipient => 
-      externalDomains.some(domain => recipient.includes(domain))
-    );
+    try {
+      // This would need to be enhanced with actual domain checking
+      const externalDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'];
+      const recipients = email.recipients || [];
+      
+      return recipients.some(recipient => {
+        // Handle different recipient formats safely
+        let emailAddress = '';
+        
+        if (typeof recipient === 'string') {
+          emailAddress = recipient;
+        } else if (recipient && typeof recipient === 'object') {
+          emailAddress = recipient.email || recipient.emailAddress || recipient.address || '';
+        }
+        
+        // Only check if we have a valid email string
+        if (typeof emailAddress === 'string' && emailAddress.length > 0) {
+          return externalDomains.some(domain => emailAddress.toLowerCase().includes(domain));
+        }
+        
+        return false;
+      });
+    } catch (error) {
+      console.warn('Error checking external recipients:', error.message);
+      return false;
+    }
   }
 
   /**
@@ -708,18 +1098,20 @@ Respond with JSON in this exact format:
       if (recipients.length === 0) return result;
 
       // Analyze external recipients
-      const externalRecipients = recipients.filter(r => 
-        !r.email.includes('@company.com') // Should be dynamic based on company domain
-      );
+      const externalRecipients = recipients.filter(r => {
+        const email = typeof r === 'string' ? r : (r && r.email ? r.email : '');
+        return email && !email.includes('@company.com'); // Should be dynamic based on company domain
+      });
 
       if (externalRecipients.length > 0) {
         result.score += externalRecipients.length * 5;
         result.factors.push(`${externalRecipients.length} external recipients`);
 
         // Check for high-risk domains
-        const highRiskDomains = externalRecipients.filter(r => 
-          this.domainRiskLevels.high.some(domain => r.email.includes(domain))
-        );
+        const highRiskDomains = externalRecipients.filter(r => {
+          const email = typeof r === 'string' ? r : (r && r.email ? r.email : '');
+          return email && this.domainRiskLevels.high.some(domain => email.includes(domain));
+        });
 
         if (highRiskDomains.length > 0) {
           result.score += highRiskDomains.length * 10;
@@ -1040,6 +1432,71 @@ Respond with JSON in this exact format:
   }
 
   /**
+   * Enhanced recommendations based on analysis results
+   */
+  generateEnhancedRecommendations(analysis) {
+    const recommendations = [];
+
+    // Add recommendations from database categories
+    analysis.categoryAnalysis.forEach(categoryResult => {
+      if (categoryResult.recommendations && categoryResult.recommendations.length > 0) {
+        recommendations.push({
+          type: 'category_specific',
+          category: categoryResult.categoryName,
+          priority: categoryResult.severity,
+          action: categoryResult.reasoning || 'Review email content',
+          description: categoryResult.reasoning || 'Consider this category for further investigation'
+        });
+      }
+    });
+
+    // Add general recommendations based on overall risk
+    if (analysis.riskScore >= 80) {
+      recommendations.push({
+        type: 'investigate',
+        priority: 'high',
+        action: 'Comprehensive security review required',
+        description: 'Employee shows consistently high risk behavior patterns'
+      });
+    }
+
+    const externalComms = analysis.riskFactors.some(f => f.includes('external'));
+    if (externalComms) {
+      recommendations.push({
+        type: 'policy',
+        priority: 'medium',
+        action: 'Review external communication policies with employee',
+        description: 'High frequency of external communications detected'
+      });
+    }
+
+    // Add recommendations from legacy patterns
+    if (analysis.patterns.length > 0) {
+      analysis.patterns.forEach(pattern => {
+        if (pattern.severity === 'Critical') {
+          recommendations.push({
+            type: 'pattern',
+            category: pattern.category,
+            priority: 'critical',
+            action: 'Investigate this specific pattern',
+            description: `Highly suspicious pattern detected: ${pattern.matches.join(', ')}`
+          });
+        } else if (pattern.severity === 'High') {
+          recommendations.push({
+            type: 'pattern',
+            category: pattern.category,
+            priority: 'high',
+            action: 'Review this pattern',
+            description: `Suspicious pattern detected: ${pattern.matches.join(', ')}`
+          });
+        }
+      });
+    }
+
+    return recommendations;
+  }
+
+  /**
    * Batch analyze multiple emails for an employee
    */
   async analyzeEmployeeEmails(employeeId, emails, timeframe = '30d') {
@@ -1143,6 +1600,40 @@ Respond with JSON in this exact format:
 
     return recommendations;
   }
+
+  /**
+   * Analyze timing patterns for risk assessment
+   */
+  analyzeTiming(email) {
+    const result = {
+      score: 0,
+      factors: []
+    };
+
+    try {
+      const sentAt = new Date(email.sentAt);
+      const hour = sentAt.getHours();
+      const dayOfWeek = sentAt.getDay();
+
+      // Check for after-hours activity (before 8 AM or after 6 PM)
+      if (hour < 8 || hour > 18) {
+        result.score += 3;
+        result.factors.push(`Email sent after hours: ${hour}:00`);
+      }
+
+      // Check for weekend activity
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        result.score += 2;
+        result.factors.push('Email sent on weekend');
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error analyzing timing:', error);
+      return result;
+    }
+  }
+
 }
 
-module.exports = EmailRiskAnalyzer; 
+module.exports = new EmailRiskAnalyzer(); 

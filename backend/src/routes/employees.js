@@ -179,7 +179,12 @@ router.get('/', async (req, res) => {
         em.after_hours_activity,
         em.data_transfer,
         em.security_events,
-        em.behavior_change
+        em.behavior_change,
+        -- Get category detection summary (last 30 days)
+        cds.total_detections,
+        cds.unique_categories,
+        cds.max_risk_score as category_max_risk,
+        cds.critical_detections
       FROM employees e
       LEFT JOIN violations v ON e.id = v.employee_id
       LEFT JOIN compliance_profiles cp ON e.compliance_profile_id = cp.id
@@ -192,10 +197,21 @@ router.get('/', async (req, res) => {
         ORDER BY date DESC 
         LIMIT 1
       ) em ON true
+      LEFT JOIN LATERAL (
+        SELECT 
+          COUNT(*) as total_detections,
+          COUNT(DISTINCT category_id) as unique_categories,
+          MAX(risk_score) as max_risk_score,
+          COUNT(CASE WHEN risk_score >= 80 THEN 1 END) as critical_detections
+        FROM category_detection_results 
+        WHERE employee_id = e.id 
+          AND analyzed_at >= NOW() - INTERVAL '30 days'
+      ) cds ON true
       WHERE ${whereClause}
       GROUP BY e.id, e.name, e.email, e.department, e.job_title, e.risk_score, e.risk_level, e.last_activity, e.photo_url,
                e.compliance_profile_id, e.last_compliance_review, e.data_retention_until, cp.profile_name,
-               em.email_volume, em.external_contacts, em.after_hours_activity, em.data_transfer, em.security_events, em.behavior_change
+               em.email_volume, em.external_contacts, em.after_hours_activity, em.data_transfer, em.security_events, em.behavior_change,
+               cds.total_detections, cds.unique_categories, cds.max_risk_score, cds.critical_detections
       ORDER BY e.${finalSortBy} ${finalSortOrder}
       LIMIT $${paramCount - 1} OFFSET $${paramCount}
     `, [...queryParams, limit, offset]);
@@ -209,6 +225,39 @@ router.get('/', async (req, res) => {
 
     const total = parseInt(countResult.rows[0].total);
     const totalPages = Math.ceil(total / limit);
+
+    // Get violations for all employees in this batch
+    const employeeIds = employeesResult.rows.map(row => row.id);
+    const violationsResult = await query(`
+      SELECT 
+        employee_id,
+        id,
+        type,
+        severity,
+        status,
+        description,
+        created_at
+      FROM violations
+      WHERE employee_id = ANY($1)
+        AND status = 'Active'
+      ORDER BY created_at DESC
+    `, [employeeIds]);
+
+    // Group violations by employee_id
+    const violationsByEmployee = violationsResult.rows.reduce((acc, violation) => {
+      if (!acc[violation.employee_id]) {
+        acc[violation.employee_id] = [];
+      }
+      acc[violation.employee_id].push({
+        id: violation.id,
+        type: violation.type,
+        severity: violation.severity,
+        status: violation.status,
+        description: violation.description,
+        createdAt: violation.created_at
+      });
+      return acc;
+    }, {});
 
     res.json({
       employees: employeesResult.rows.map(row => {
@@ -258,7 +307,7 @@ router.get('/', async (req, res) => {
           photo: row.photo,
           violationCount: parseInt(row.violation_count),
           activeViolations: parseInt(row.active_violations),
-          violations: [], // Empty array for consistency
+          violations: violationsByEmployee[row.id] || [], // Actual violations data
           
           // Compliance-related fields
           complianceProfileId: row.compliance_profile_id,
@@ -276,7 +325,16 @@ router.get('/', async (req, res) => {
             dataTransfer: parseFloat(row.data_transfer) || 0,
             securityEvents: row.security_events || 0,
             behaviorChange: row.behavior_change || 0
-          } : null // No metrics if no data available
+          } : null, // No metrics if no data available
+          
+          // Category detection summary (last 30 days)
+          categoryDetections: {
+            totalDetections: parseInt(row.total_detections) || 0,
+            uniqueCategories: parseInt(row.unique_categories) || 0,
+            maxRiskScore: parseInt(row.category_max_risk) || 0,
+            criticalDetections: parseInt(row.critical_detections) || 0,
+            hasDetections: (parseInt(row.total_detections) || 0) > 0
+          }
         };
       }),
       pagination: {
@@ -393,6 +451,137 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({
       error: 'Failed to fetch employee details',
       code: 'EMPLOYEE_ERROR'
+    });
+  }
+});
+
+// =============================================================================
+// GET EMPLOYEE CATEGORY DETECTION RESULTS
+// =============================================================================
+router.get('/:id/category-detections', async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.id);
+    const { days = 30, limit = 50 } = req.query;
+
+    if (isNaN(employeeId)) {
+      return res.status(400).json({
+        error: 'Invalid employee ID',
+        code: 'INVALID_ID'
+      });
+    }
+
+    // Get category detection results for this employee
+    const detectionsResult = await query(`
+      SELECT 
+        cdr.id,
+        cdr.email_id,
+        cdr.risk_score,
+        cdr.confidence_score,
+        cdr.detection_context,
+        cdr.matched_keywords,
+        cdr.pattern_matches,
+        cdr.analyzed_at,
+        cdr.analyzer_version,
+        tc.id as category_id,
+        tc.name as category_name,
+        tc.severity as category_severity,
+        tc.description as category_description,
+        ec.subject as email_subject,
+        ec.sender_email,
+        ec.sent_at as email_sent_at
+      FROM category_detection_results cdr
+      JOIN threat_categories tc ON cdr.category_id = tc.id
+      LEFT JOIN email_communications ec ON cdr.email_id = ec.id
+      WHERE cdr.employee_id = $1
+        AND cdr.analyzed_at >= NOW() - INTERVAL '1 day' * $2
+      ORDER BY cdr.analyzed_at DESC, cdr.risk_score DESC
+      LIMIT $3
+    `, [employeeId, days, limit]);
+
+    // Get summary statistics
+    const summaryResult = await query(`
+      SELECT 
+        COUNT(*) as total_detections,
+        COUNT(DISTINCT cdr.category_id) as unique_categories,
+        COUNT(DISTINCT cdr.email_id) as unique_emails,
+        AVG(cdr.risk_score)::numeric(5,2) as avg_risk_score,
+        MAX(cdr.risk_score) as max_risk_score,
+        COUNT(CASE WHEN cdr.risk_score >= 80 THEN 1 END) as critical_detections,
+        COUNT(CASE WHEN cdr.risk_score >= 60 THEN 1 END) as high_risk_detections
+      FROM category_detection_results cdr
+      WHERE cdr.employee_id = $1
+        AND cdr.analyzed_at >= NOW() - INTERVAL '1 day' * $2
+    `, [employeeId, days]);
+
+    // Get top categories by detection count
+    const topCategoriesResult = await query(`
+      SELECT 
+        tc.id,
+        tc.name,
+        tc.severity,
+        COUNT(cdr.id) as detection_count,
+        AVG(cdr.risk_score)::numeric(5,2) as avg_risk_score,
+        MAX(cdr.risk_score) as max_risk_score
+      FROM category_detection_results cdr
+      JOIN threat_categories tc ON cdr.category_id = tc.id
+      WHERE cdr.employee_id = $1
+        AND cdr.analyzed_at >= NOW() - INTERVAL '1 day' * $2
+      GROUP BY tc.id, tc.name, tc.severity
+      ORDER BY detection_count DESC, avg_risk_score DESC
+      LIMIT 10
+    `, [employeeId, days]);
+
+    const summary = summaryResult.rows[0];
+
+    res.json({
+      employeeId,
+      period: { days: parseInt(days) },
+      summary: {
+        totalDetections: parseInt(summary.total_detections) || 0,
+        uniqueCategories: parseInt(summary.unique_categories) || 0,
+        uniqueEmails: parseInt(summary.unique_emails) || 0,
+        avgRiskScore: parseFloat(summary.avg_risk_score) || 0,
+        maxRiskScore: parseInt(summary.max_risk_score) || 0,
+        criticalDetections: parseInt(summary.critical_detections) || 0,
+        highRiskDetections: parseInt(summary.high_risk_detections) || 0
+      },
+      topCategories: topCategoriesResult.rows.map(row => ({
+        categoryId: row.id,
+        categoryName: row.name,
+        severity: row.severity,
+        detectionCount: parseInt(row.detection_count),
+        avgRiskScore: parseFloat(row.avg_risk_score) || 0,
+        maxRiskScore: parseInt(row.max_risk_score) || 0
+      })),
+      detections: detectionsResult.rows.map(row => ({
+        id: row.id,
+        emailId: row.email_id,
+        riskScore: row.risk_score,
+        confidenceScore: parseFloat(row.confidence_score) || 0,
+        detectionContext: row.detection_context,
+        matchedKeywords: row.matched_keywords,
+        patternMatches: row.pattern_matches,
+        analyzedAt: row.analyzed_at,
+        analyzerVersion: row.analyzer_version,
+        category: {
+          id: row.category_id,
+          name: row.category_name,
+          severity: row.category_severity,
+          description: row.category_description
+        },
+        email: row.email_id ? {
+          subject: row.email_subject,
+          senderEmail: row.sender_email,
+          sentAt: row.email_sent_at
+        } : null
+      }))
+    });
+
+  } catch (error) {
+    console.error('Get employee category detections error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch employee category detections',
+      code: 'CATEGORY_DETECTIONS_ERROR'
     });
   }
 });

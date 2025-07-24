@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, AlertTriangle, Calendar, Mail, Clock, Shield } from 'lucide-react';
+import { Eye, AlertTriangle, Calendar, Mail, Clock, Shield, Target, TrendingUp } from 'lucide-react';
 import { Employee } from '../types';
 import { getRiskColor, getRiskTextColor, getRiskBorderColor, formatTimeAgo } from '../utils/riskUtils';
 import { ComplianceStatusBadge, ComplianceProfileBadge, ComplianceIndicator } from './ComplianceStatusBadge';
@@ -14,7 +14,7 @@ interface EmployeeCardProps {
 }
 
 // Avatar component with dynamic fallback
-const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ employee, size = 'md' }) => {
+export const EmployeeAvatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ employee, size = 'md' }) => {
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
@@ -29,7 +29,12 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
 
   // Generate initials from name
   const getInitials = (name: string) => {
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return 'U'; // Default to 'U' for Unknown/User
+    }
+    
     return name
+      .trim()
       .split(' ')
       .map(word => word[0])
       .join('')
@@ -39,6 +44,10 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
 
   // Generate color based on name
   const getBackgroundColor = (name: string) => {
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return '#6B7280'; // Default gray color for unknown names
+    }
+    
     const colors = [
       '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
       '#FFEAA7', '#DDA0DD', '#FFB6C1', '#87CEEB'
@@ -74,11 +83,6 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
         >
           {initials}
         </div>
-        <div className={`absolute -top-1 -right-1 ${config.badge} ${getRiskColor(employee.riskLevel)} rounded-full flex items-center justify-center`}>
-          <span className="text-white font-bold" style={{ fontSize: size === 'sm' ? '10px' : size === 'md' ? '12px' : '14px' }}>
-            {employee.riskScore}
-          </span>
-        </div>
       </div>
     );
   }
@@ -107,11 +111,6 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
           setImageLoading(false);
         }}
       />
-      <div className={`absolute -top-1 -right-1 ${config.badge} ${getRiskColor(employee.riskLevel)} rounded-full flex items-center justify-center`}>
-        <span className="text-white font-bold" style={{ fontSize: size === 'sm' ? '10px' : size === 'md' ? '12px' : '14px' }}>
-          {employee.riskScore}
-        </span>
-      </div>
     </div>
   );
 };
@@ -311,6 +310,141 @@ const ComplianceSection: React.FC<{ employee: Employee; layout: 'grid' | 'list' 
   );
 };
 
+// Category Detection component for showing AI-powered threat analysis results
+const CategoryDetectionSection: React.FC<{ employee: Employee; layout: 'grid' | 'list' | 'compact' }> = ({ employee, layout }) => {
+  const detections = employee.categoryDetections;
+  
+  if (!detections || !detections.hasDetections) {
+    if (layout === 'compact') return null;
+    
+    return (
+      <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+        <div className="flex items-center space-x-2">
+          <Shield className="w-4 h-4 text-green-600 dark:text-green-400" />
+          <span className="text-xs text-green-700 dark:text-green-300">No threat categories detected</span>
+        </div>
+      </div>
+    );
+  }
+
+  const getRiskColorForScore = (score: number) => {
+    if (score >= 80) return 'text-red-600 dark:text-red-400';
+    if (score >= 60) return 'text-orange-600 dark:text-orange-400';
+    if (score >= 40) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-green-600 dark:text-green-400';
+  };
+
+  if (layout === 'compact') {
+    return (
+      <div className="flex items-center space-x-2">
+        <Target className="w-3 h-3 text-blue-600" />
+        <span className="text-xs text-gray-600 dark:text-gray-400">
+          {detections.totalDetections} detections
+        </span>
+        {detections.criticalDetections > 0 && (
+          <span className="text-xs text-red-600 dark:text-red-400 font-medium">
+            {detections.criticalDetections} critical
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (layout === 'list') {
+    return (
+      <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <div className="text-xs">
+              <span className="text-gray-600 dark:text-gray-400">AI Threats: </span>
+              <span className="font-medium text-gray-900 dark:text-white">
+                {detections.totalDetections} detected
+              </span>
+            </div>
+            <div className="text-xs">
+              <span className="text-gray-600 dark:text-gray-400">Categories: </span>
+              <span className="font-medium text-gray-900 dark:text-white">
+                {detections.uniqueCategories}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            {detections.criticalDetections > 0 && (
+              <span className="text-xs text-red-600 dark:text-red-400 flex items-center">
+                <AlertTriangle className="w-3 h-3 mr-1" />
+                {detections.criticalDetections} Critical
+              </span>
+            )}
+            <span className={`text-xs font-medium ${getRiskColorForScore(detections.maxRiskScore)}`}>
+              Max: {detections.maxRiskScore}%
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Grid layout - comprehensive view
+  return (
+    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-2">
+          <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm font-medium text-gray-900 dark:text-white">AI Threat Analysis</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className={`text-lg font-bold ${getRiskColorForScore(detections.maxRiskScore)}`}>
+            {detections.maxRiskScore}%
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">max</span>
+        </div>
+      </div>
+      
+      {/* Detection Statistics */}
+      <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+        <div className="text-center p-2 bg-white/50 dark:bg-gray-700/50 rounded">
+          <div className="text-sm font-bold text-blue-600 dark:text-blue-400">
+            {detections.totalDetections}
+          </div>
+          <div className="text-gray-600 dark:text-gray-400">Detections</div>
+        </div>
+        <div className="text-center p-2 bg-white/50 dark:bg-gray-700/50 rounded">
+          <div className="text-sm font-bold text-purple-600 dark:text-purple-400">
+            {detections.uniqueCategories}
+          </div>
+          <div className="text-gray-600 dark:text-gray-400">Categories</div>
+        </div>
+        <div className="text-center p-2 bg-white/50 dark:bg-gray-700/50 rounded">
+          <div className="text-sm font-bold text-red-600 dark:text-red-400">
+            {detections.criticalDetections}
+          </div>
+          <div className="text-gray-600 dark:text-gray-400">Critical</div>
+        </div>
+      </div>
+      
+      {/* Status indicator */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-gray-600 dark:text-gray-400">Last 30 days</span>
+        {detections.criticalDetections > 0 ? (
+          <span className="text-red-600 dark:text-red-400 font-medium flex items-center">
+            <TrendingUp className="w-3 h-3 mr-1" />
+            High Risk
+          </span>
+        ) : detections.totalDetections > 0 ? (
+          <span className="text-blue-600 dark:text-blue-400 font-medium">
+            Monitoring
+          </span>
+        ) : (
+          <span className="text-green-600 dark:text-green-400 font-medium">
+            Clear
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const EmployeeCard: React.FC<EmployeeCardProps> = ({ 
   employee, 
   onViewDetails, 
@@ -338,7 +472,7 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
           <div className="flex items-center space-x-3 mb-4">
             {/* Enhanced Avatar with ring */}
             <div className="relative">
-              <Avatar employee={employee} size="md" />
+              <EmployeeAvatar employee={employee} size="md" />
               <div className={`absolute inset-0 rounded-full ring-3 ${
                 employee.riskLevel === 'critical' ? 'ring-red-500/30' :
                 employee.riskLevel === 'high' ? 'ring-orange-500/30' :
@@ -405,6 +539,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
               </div>
             </div>
           )}
+
+          {/* Category Detection Results */}
+          <CategoryDetectionSection employee={employee} layout="grid" />
         </div>
       </div>
     ) : (
@@ -413,7 +550,7 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
            onClick={() => onViewDetails?.(employee)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Avatar employee={employee} size="sm" />
+            <EmployeeAvatar employee={employee} size="sm" />
             
             <div className="flex-1">
               <div className="flex items-center space-x-3">
@@ -432,6 +569,9 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
               {showCompliance && (
                 <ComplianceSection employee={employee} layout="list" />
               )}
+
+              {/* Category Detection Results for list layout */}
+              <CategoryDetectionSection employee={employee} layout="list" />
 
               {/* Violation Summary (list view) */}
               {violationCount > 0 && (
@@ -456,6 +596,7 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
           
           <div className="flex items-center space-x-4">
             {showMetrics && <EmployeeMetrics employee={employee} compact />}
+            <CategoryDetectionSection employee={employee} layout="compact" />
             
             <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
               <div className="flex items-center space-x-1">

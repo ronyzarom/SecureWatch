@@ -678,4 +678,17 @@ export const complianceAPI = {
   }
 };
 
+// ============================================================
+// CATEGORY DETECTION RESULTS
+// ============================================================
+
+export const categoryDetectionAPI = {
+  getEmployeeCategoryDetections: async (employeeId: number, days: number = 30) => {
+    const response = await api.get(`/api/employees/${employeeId}/category-detections`, {
+      params: { days }
+    });
+    return response.data;
+  }
+};
+
 export default api; 

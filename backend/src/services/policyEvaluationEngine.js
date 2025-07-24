@@ -20,7 +20,10 @@ class PolicyEvaluationEngine {
       'time_based',
       'data_access',
       'external_recipients',
-      'any_violation'
+      'any_violation',
+      'category_detection_count',
+      'category_detection_risk',
+      'category_detection_type'
     ];
 
     this.supportedOperators = [
@@ -366,6 +369,39 @@ class PolicyEvaluationEngine {
         const violationTime = new Date(violation.created_at);
         const hour = violationTime.getHours();
         return hour < 8 || hour > 18; // Outside 8 AM - 6 PM
+
+      case 'category_detection_count':
+        // Count category detections in last 24 hours
+        const categoryCountResult = await query(`
+          SELECT COUNT(*) as count
+          FROM category_detection_results cdr
+          WHERE cdr.employee_id = $1 
+          AND cdr.analyzed_at >= NOW() - INTERVAL '24 hours'
+          AND cdr.risk_score >= 60
+        `, [context.employeeId]);
+        return parseInt(categoryCountResult.rows[0]?.count || 0);
+
+      case 'category_detection_risk':
+        // Get maximum category detection risk score in last 24 hours
+        const categoryRiskResult = await query(`
+          SELECT MAX(cdr.risk_score) as max_risk
+          FROM category_detection_results cdr
+          WHERE cdr.employee_id = $1 
+          AND cdr.analyzed_at >= NOW() - INTERVAL '24 hours'
+        `, [context.employeeId]);
+        return parseInt(categoryRiskResult.rows[0]?.max_risk || 0);
+
+      case 'category_detection_type':
+        // Check if specific category type was detected
+        const categoryTypeResult = await query(`
+          SELECT COUNT(*) as count
+          FROM category_detection_results cdr
+          JOIN threat_categories tc ON cdr.category_id = tc.id
+          WHERE cdr.employee_id = $1 
+          AND cdr.analyzed_at >= NOW() - INTERVAL '24 hours'
+          AND tc.name ILIKE $2
+        `, [context.employeeId, `%${value}%`]);
+        return parseInt(categoryTypeResult.rows[0]?.count || 0) > 0;
 
       default:
         console.log(`⚠️ Unknown condition type: ${conditionType}`);

@@ -34,9 +34,7 @@ export const ViolationStatusManager: React.FC<ViolationStatusManagerProps> = ({
   const [selectedStatus, setSelectedStatus] = useState(violation.status);
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
-  const [aiValidating, setAiValidating] = useState(false);
-  const [aiContext, setAiContext] = useState('');
-  const [showAiModal, setShowAiModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const statusOptions = [
     { value: 'Active', label: 'Active', icon: AlertTriangle, color: 'text-red-600' },
@@ -48,8 +46,11 @@ export const ViolationStatusManager: React.FC<ViolationStatusManagerProps> = ({
   const handleSave = async () => {
     console.log('🔧 Debug: handleSave called with:', { violationId: violation.id, selectedStatus, reason });
     
+    // Clear any previous errors
+    setError(null);
+    
     if (!reason.trim()) {
-      alert('Please provide a reason for the status change');
+      setError('Please provide a reason for the status change');
       return;
     }
 
@@ -60,9 +61,10 @@ export const ViolationStatusManager: React.FC<ViolationStatusManagerProps> = ({
       console.log('🔧 Debug: onStatusChange completed successfully');
       setIsEditing(false);
       setReason('');
+      setError(null);
     } catch (error) {
       console.error('❌ Debug: Failed to update status:', error);
-      alert('Failed to update status. Please try again.');
+      setError('Failed to update status. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -72,28 +74,7 @@ export const ViolationStatusManager: React.FC<ViolationStatusManagerProps> = ({
     setSelectedStatus(violation.status);
     setReason('');
     setIsEditing(false);
-  };
-
-  const handleAIValidation = async () => {
-    if (!onAIValidate) {
-      console.error('❌ onAIValidate function is not available');
-      alert('AI validation function is not available. Please refresh the page and try again.');
-      return;
-    }
-
-    setAiValidating(true);
-    try {
-      console.log('🤖 Starting AI validation for violation:', violation.id);
-      await onAIValidate(violation.id, aiContext);
-      console.log('✅ AI validation request completed');
-      setShowAiModal(false);
-      setAiContext('');
-    } catch (error) {
-      console.error('❌ Failed to trigger AI validation:', error);
-      alert('Failed to start AI validation. Please try again.');
-    } finally {
-      setAiValidating(false);
-    }
+    setError(null);
   };
 
   const getAIValidationColor = (status: string) => {
@@ -132,6 +113,7 @@ export const ViolationStatusManager: React.FC<ViolationStatusManagerProps> = ({
               onClick={() => {
                 console.log('🔧 Debug: Edit button clicked for violation', violation.id);
                 setIsEditing(true);
+                setError(null);
               }}
               className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200 rounded transition-colors"
               title="Change status"
@@ -185,21 +167,6 @@ export const ViolationStatusManager: React.FC<ViolationStatusManagerProps> = ({
             </span>
           </div>
         )}
-
-        {/* AI Validation */}
-        {onAIValidate && (
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setShowAiModal(true)}
-              disabled={aiValidating}
-              className="flex items-center space-x-1 px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-md transition-colors disabled:opacity-50"
-              title="Request AI validation of evidence"
-            >
-              <Bot className="w-4 h-4" />
-              <span>{aiValidating ? 'Validating...' : 'AI Validate'}</span>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Reason Input (when editing) */}
@@ -210,59 +177,17 @@ export const ViolationStatusManager: React.FC<ViolationStatusManagerProps> = ({
           </label>
           <textarea
             value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            onChange={(e) => {
+              setReason(e.target.value);
+              if (error) setError(null); // Clear error when user starts typing
+            }}
             placeholder="Explain why you're changing the status..."
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             rows={2}
           />
-        </div>
-      )}
-
-      {/* AI Validation Modal */}
-      {showAiModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <div className="flex items-center space-x-2 mb-4">
-              <Bot className="w-6 h-6 text-blue-500" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                AI Evidence Validation
-              </h3>
-            </div>
-            
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              The AI will analyze this violation's evidence to determine if it's a legitimate security concern or a false positive.
-            </p>
-
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Additional Context (Optional)
-              </label>
-              <textarea
-                value={aiContext}
-                onChange={(e) => setAiContext(e.target.value)}
-                placeholder="Provide any additional context that might help with the analysis..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                rows={3}
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowAiModal(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAIValidation}
-                disabled={aiValidating}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50"
-              >
-                <Bot className="w-4 h-4" />
-                <span>{aiValidating ? 'Processing...' : 'Start Validation'}</span>
-              </button>
-            </div>
-          </div>
+          {error && (
+            <p className="text-red-500 text-xs mt-1">{error}</p>
+          )}
         </div>
       )}
     </div>

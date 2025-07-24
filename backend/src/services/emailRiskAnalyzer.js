@@ -816,6 +816,139 @@ DO NOT use decimal numbers like 67.5 or 89.3. Use whole numbers only.`;
   }
 
   /**
+   * Enhanced category analysis with policy violation triggers
+   */
+  async analyzeWithCustomCategoriesAndTriggerPolicies(email, categories, employeeId) {
+    const results = await this.analyzeWithCustomCategories(email, categories);
+    
+    // Store detection results and trigger policies for high-risk detections
+    for (const result of results) {
+      try {
+        // Store the detection result
+        await this.storeCategoryDetectionResult(email, result, employeeId);
+        
+        // Check if this detection should trigger a policy violation
+        if (result.triggersCritical || result.triggersAlert || result.triggersInvestigation) {
+          await this.createCategoryViolation(email, result, employeeId);
+        }
+        
+      } catch (error) {
+        console.error(`Error processing category detection for ${result.categoryName}:`, error);
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Store category detection result in database
+   */
+  async storeCategoryDetectionResult(email, result, employeeId) {
+    try {
+      const { query } = require('../utils/database');
+      
+      await query(`
+        INSERT INTO category_detection_results (
+          email_id, employee_id, category_id, risk_score, confidence_score,
+          detection_context, matched_keywords, pattern_matches,
+          analyzed_at, analyzer_version
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
+      `, [
+        email.id,
+        employeeId,
+        result.categoryId,
+        result.finalRiskScore || result.riskScore,
+        result.confidence,
+        JSON.stringify({
+          analysisMethod: result.llmAnalysis ? 'LLM' : 'Keywords',
+          triggersAlert: result.triggersAlert,
+          triggersInvestigation: result.triggersInvestigation,
+          triggersCritical: result.triggersCritical,
+          reasoning: result.reasoning
+        }),
+        JSON.stringify(result.matchedKeywords || []),
+        JSON.stringify(result.detectedPatterns || []),
+        '1.0.0'
+      ]);
+      
+    } catch (error) {
+      console.error('Error storing category detection result:', error);
+    }
+  }
+
+  /**
+   * Create violation for category detection that exceeds thresholds
+   */
+  async createCategoryViolation(email, result, employeeId) {
+    try {
+      const { query } = require('../utils/database');
+      
+      // Determine violation severity based on result thresholds
+      let severity = 'Low';
+      let violationType = `category_detection_${result.categoryName.toLowerCase().replace(/\s+/g, '_')}`;
+      
+      if (result.triggersCritical) {
+        severity = 'Critical';
+      } else if (result.triggersAlert) {
+        severity = 'High';
+      } else if (result.triggersInvestigation) {
+        severity = 'Medium';
+      }
+      
+      // Create the violation
+      const violationResult = await query(`
+        INSERT INTO violations (
+          employee_id, type, severity, description, 
+          source, metadata, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+      `, [
+        employeeId,
+        violationType,
+        severity,
+        `Category threat detected: ${result.categoryName} in email "${email.subject || 'No subject'}"`,
+        'category_detection',
+        JSON.stringify({
+          emailId: email.id,
+          categoryId: result.categoryId,
+          categoryName: result.categoryName,
+          riskScore: result.finalRiskScore || result.riskScore,
+          confidence: result.confidence,
+          analysisMethod: result.llmAnalysis ? 'LLM' : 'Keywords',
+          reasoning: result.reasoning,
+          detectedPatterns: result.detectedPatterns,
+          triggersAlert: result.triggersAlert,
+          triggersInvestigation: result.triggersInvestigation,
+          triggersCritical: result.triggersCritical
+        }),
+        'Active'
+      ]);
+
+      const violationId = violationResult.rows[0].id;
+      console.log(`🚨 Created category violation ${violationId} for ${result.categoryName}: ${email.subject}`);
+
+      // 🔥 TRIGGER POLICY EVALUATION
+      try {
+        const policyEvaluationEngine = require('./policyEvaluationEngine');
+        const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
+        if (policiesTriggered > 0) {
+          console.log(`🔥 Category detection triggered ${policiesTriggered} policies for violation ${violationId}`);
+        } else {
+          console.log(`📋 No policies triggered for category violation ${violationId} (employee ${employeeId})`);
+        }
+      } catch (policyError) {
+        console.error(`❌ Failed to evaluate policies for category violation ${violationId}:`, policyError);
+      }
+
+      return violationId;
+
+    } catch (error) {
+      console.error('Error creating category violation:', error);
+      return null;
+    }
+  }
+
+  /**
    * Determine if category should use LLM analysis
    */
   shouldUseLLMForCategory(category) {

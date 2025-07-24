@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  X, Calendar, AlertTriangle, TrendingUp, Activity, Shield, Mail, Users, Clock, Database, Eye, FileText, Zap
+  X, Calendar, AlertTriangle, TrendingUp, Activity, Shield, Mail, Users, Clock, Database, Eye, FileText, Zap, Target
 } from 'lucide-react';
 import { Employee, PolicyViolation } from '../types';
 import { getRiskColor, getRiskTextColor, formatTimeAgo } from '../utils/riskUtils';
@@ -8,9 +8,9 @@ import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
 import { EmailViewModal } from './EmailViewModal';
 import { ViolationStatusManager } from './ViolationStatusManager';
-import { employeeAPI } from '../services/api';
+import { employeeAPI, categoryDetectionAPI } from '../services/api';
 import { withErrorHandling, createError, ErrorType, logError } from '../utils/errorUtils';
-import { AppError } from '../types';
+import { AppError, CategoryDetectionSummary } from '../types';
 
 interface EmployeeDetailsModalProps {
   employee: Employee | null;
@@ -105,6 +105,8 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
   const [error, setError] = useState<AppError | null>(null);
   const [detailedEmployee, setDetailedEmployee] = useState<Employee | null>(null);
   const [violations, setViolations] = useState<PolicyViolation[]>([]);
+  const [categoryDetections, setCategoryDetections] = useState<CategoryDetectionSummary | null>(null);
+  const [categoryDetectionsLoading, setCategoryDetectionsLoading] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
 
@@ -145,6 +147,9 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
         setViolations(data.violations);
       }
       
+      // Fetch category detection results
+      fetchCategoryDetections();
+      
     } catch (error) {
       const appError = error instanceof Error 
         ? createError(ErrorType.SERVER, 'Failed to load employee details. Please try again.', error, undefined, true)
@@ -154,6 +159,30 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
       logError(appError, 'EmployeeDetailsModal');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCategoryDetections = async () => {
+    if (!employee) return;
+
+    setCategoryDetectionsLoading(true);
+
+    try {
+      console.log('🎯 Fetching category detection results for:', employee.name);
+      
+      const detectionData = await categoryDetectionAPI.getEmployeeCategoryDetections(
+        Number(employee.id), 
+        30 // Last 30 days
+      );
+
+      console.log('✅ Category detections fetched:', detectionData);
+      setCategoryDetections(detectionData);
+      
+    } catch (error) {
+      console.error('❌ Failed to fetch category detections:', error);
+      // Don't show error for category detections, just log it
+    } finally {
+      setCategoryDetectionsLoading(false);
     }
   };
 
@@ -265,6 +294,140 @@ export const EmployeeDetailsModal: React.FC<EmployeeDetailsModalProps> = ({ empl
         
         {/* Enhanced Main Content */}
         <div className="flex-1 p-8 space-y-8 overflow-y-auto flex flex-col">
+            {/* Category Detection Results Section */}
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center space-x-2">
+                <Target className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                <span>AI Threat Analysis</span>
+                {categoryDetectionsLoading && <LoadingSpinner size="sm" />}
+              </h2>
+              
+              {categoryDetections ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                  {/* Total Detections */}
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <Target className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                      <span className="text-xs px-2 py-1 bg-blue-200 dark:bg-blue-800/50 text-blue-800 dark:text-blue-200 rounded-full">
+                        30 Days
+                      </span>
+                    </div>
+                    <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mb-1">
+                      {categoryDetections.summary.totalDetections}
+                    </p>
+                    <p className="text-sm text-blue-700 dark:text-blue-200">Total Detections</p>
+                  </div>
+
+                  {/* Unique Categories */}
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 p-6 rounded-xl border border-purple-200 dark:border-purple-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <AlertTriangle className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                      <span className="text-xs px-2 py-1 bg-purple-200 dark:bg-purple-800/50 text-purple-800 dark:text-purple-200 rounded-full">
+                        Categories
+                      </span>
+                    </div>
+                    <p className="text-3xl font-bold text-purple-900 dark:text-purple-100 mb-1">
+                      {categoryDetections.summary.uniqueCategories}
+                    </p>
+                    <p className="text-sm text-purple-700 dark:text-purple-200">Threat Categories</p>
+                  </div>
+
+                  {/* Max Risk Score */}
+                  <div className={`bg-gradient-to-br p-6 rounded-xl border ${
+                    categoryDetections.summary.maxRiskScore >= 80 
+                      ? 'from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 border-red-200 dark:border-red-800'
+                      : categoryDetections.summary.maxRiskScore >= 60
+                      ? 'from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 border-orange-200 dark:border-orange-800'
+                      : 'from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border-green-200 dark:border-green-800'
+                  }`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <TrendingUp className={`w-6 h-6 ${
+                        categoryDetections.summary.maxRiskScore >= 80 ? 'text-red-600 dark:text-red-400'
+                        : categoryDetections.summary.maxRiskScore >= 60 ? 'text-orange-600 dark:text-orange-400'
+                        : 'text-green-600 dark:text-green-400'
+                      }`} />
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        categoryDetections.summary.maxRiskScore >= 80 
+                          ? 'bg-red-200 dark:bg-red-800/50 text-red-800 dark:text-red-200'
+                          : categoryDetections.summary.maxRiskScore >= 60
+                          ? 'bg-orange-200 dark:bg-orange-800/50 text-orange-800 dark:text-orange-200'
+                          : 'bg-green-200 dark:bg-green-800/50 text-green-800 dark:text-green-200'
+                      }`}>
+                        Risk
+                      </span>
+                    </div>
+                    <p className={`text-3xl font-bold mb-1 ${
+                      categoryDetections.summary.maxRiskScore >= 80 ? 'text-red-900 dark:text-red-100'
+                      : categoryDetections.summary.maxRiskScore >= 60 ? 'text-orange-900 dark:text-orange-100'
+                      : 'text-green-900 dark:text-green-100'
+                    }`}>
+                      {categoryDetections.summary.maxRiskScore}%
+                    </p>
+                    <p className={`text-sm ${
+                      categoryDetections.summary.maxRiskScore >= 80 ? 'text-red-700 dark:text-red-200'
+                      : categoryDetections.summary.maxRiskScore >= 60 ? 'text-orange-700 dark:text-orange-200'
+                      : 'text-green-700 dark:text-green-200'
+                    }`}>
+                      Max Risk Score
+                    </p>
+                  </div>
+
+                  {/* Critical Detections */}
+                  <div className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 p-6 rounded-xl border border-red-200 dark:border-red-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                      <span className="text-xs px-2 py-1 bg-red-200 dark:bg-red-800/50 text-red-800 dark:text-red-200 rounded-full">
+                        Critical
+                      </span>
+                    </div>
+                    <p className="text-3xl font-bold text-red-900 dark:text-red-100 mb-1">
+                      {categoryDetections.summary.criticalDetections}
+                    </p>
+                    <p className="text-sm text-red-700 dark:text-red-200">Critical Threats</p>
+                  </div>
+                </div>
+              ) : categoryDetectionsLoading ? (
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-8 text-center mb-8">
+                  <LoadingSpinner size="md" />
+                  <p className="text-gray-600 dark:text-gray-400 mt-2">Loading threat analysis...</p>
+                </div>
+              ) : (
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-6 text-center mb-8 border border-green-200 dark:border-green-800">
+                  <Shield className="w-8 h-8 text-green-600 dark:text-green-400 mx-auto mb-2" />
+                  <p className="text-green-800 dark:text-green-200 font-medium">No threat categories detected</p>
+                  <p className="text-green-600 dark:text-green-400 text-sm">This employee shows clean AI analysis results</p>
+                </div>
+              )}
+
+              {/* Top Categories */}
+              {categoryDetections && categoryDetections.topCategories.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Top Threat Categories</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {categoryDetections.topCategories.slice(0, 4).map((category, index) => (
+                      <div key={category.categoryId} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium text-gray-900 dark:text-white">{category.categoryName}</h4>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            category.severity === 'Critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
+                            category.severity === 'High' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
+                            category.severity === 'Medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                            'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                          }`}>
+                            {category.severity}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                          <span>{category.detectionCount} detections</span>
+                          <span>Avg: {category.avgRiskScore}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Risk Metrics Grid */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center space-x-2">

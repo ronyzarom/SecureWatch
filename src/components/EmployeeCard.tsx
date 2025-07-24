@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, AlertTriangle, Calendar, Mail, Clock, Shield } from 'lucide-react';
+import { Eye, AlertTriangle, Calendar, Mail, Clock, Shield, User } from 'lucide-react';
 import { Employee } from '../types';
 import { getRiskColor, getRiskTextColor, getRiskBorderColor, formatTimeAgo } from '../utils/riskUtils';
 import { ComplianceStatusBadge, ComplianceProfileBadge, ComplianceIndicator } from './ComplianceStatusBadge';
@@ -13,16 +13,16 @@ interface EmployeeCardProps {
   className?: string;
 }
 
-// Avatar component with dynamic fallback
+// Improved Avatar component with better styling
 const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ employee, size = 'md' }) => {
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
   // Size configurations
   const sizeConfig = {
-    sm: { avatar: 'w-10 h-10', text: 'text-sm', badge: 'w-4 h-4 text-xs' },
-    md: { avatar: 'w-16 h-16', text: 'text-lg', badge: 'w-6 h-6 text-xs' },
-    lg: { avatar: 'w-20 h-20', text: 'text-xl', badge: 'w-8 h-8 text-sm' }
+    sm: { avatar: 'w-10 h-10', text: 'text-sm' },
+    md: { avatar: 'w-12 h-12', text: 'text-lg' },
+    lg: { avatar: 'w-16 h-16', text: 'text-xl' }
   };
 
   const config = sizeConfig[size];
@@ -66,19 +66,12 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
   // Always show initials avatar if no valid photo URL or image failed
   if (!photoUrl || imageError) {
     return (
-      <div className="relative">
-        <div 
-          className={`${config.avatar} rounded-full flex items-center justify-center text-white font-bold ${config.text} border-2 border-gray-200 dark:border-gray-600`}
-          style={{ backgroundColor }}
-          title={`${employee.name} (${initials})`}
-        >
-          {initials}
-        </div>
-        <div className={`absolute -top-1 -right-1 ${config.badge} ${getRiskColor(employee.riskLevel)} rounded-full flex items-center justify-center`}>
-          <span className="text-white font-bold" style={{ fontSize: size === 'sm' ? '10px' : size === 'md' ? '12px' : '14px' }}>
-            {employee.riskScore}
-          </span>
-        </div>
+      <div 
+        className={`${config.avatar} rounded-full flex items-center justify-center text-white font-bold ${config.text}`}
+        style={{ backgroundColor }}
+        title={`${employee.name} (${initials})`}
+      >
+        {initials}
       </div>
     );
   }
@@ -87,7 +80,7 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
     <div className="relative">
       {imageLoading && (
         <div 
-          className={`absolute inset-0 ${config.avatar} rounded-full flex items-center justify-center text-white font-bold ${config.text} border-2 border-gray-200 dark:border-gray-600 animate-pulse`}
+          className={`absolute inset-0 ${config.avatar} rounded-full flex items-center justify-center text-white font-bold ${config.text} animate-pulse`}
           style={{ backgroundColor }}
         >
           {initials}
@@ -96,37 +89,52 @@ const Avatar: React.FC<{ employee: Employee; size?: 'sm' | 'md' | 'lg' }> = ({ e
       <img 
         src={photoUrl}
         alt={employee.name}
-        className={`${config.avatar} rounded-full object-cover border-2 border-gray-200 dark:border-gray-600 ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+        className={`${config.avatar} rounded-full object-cover ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
         onError={() => {
-          console.log(`Avatar failed to load for ${employee.name}: ${photoUrl}`);
           setImageError(true);
           setImageLoading(false);
         }}
         onLoad={() => {
-          console.log(`Avatar loaded successfully for ${employee.name}`);
           setImageLoading(false);
         }}
       />
-      <div className={`absolute -top-1 -right-1 ${config.badge} ${getRiskColor(employee.riskLevel)} rounded-full flex items-center justify-center`}>
-        <span className="text-white font-bold" style={{ fontSize: size === 'sm' ? '10px' : size === 'md' ? '12px' : '14px' }}>
-          {employee.riskScore}
-        </span>
+    </div>
+  );
+};
+
+// Risk Score component with progress bar
+const RiskScoreBar: React.FC<{ employee: Employee }> = ({ employee }) => {
+  const riskScore = employee.riskScore || 0;
+  const riskLevel = employee.riskLevel || 'Low';
+  
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return { bg: 'bg-red-500', text: 'text-red-600' };
+    if (score >= 60) return { bg: 'bg-yellow-500', text: 'text-yellow-600' };
+    if (score >= 40) return { bg: 'bg-orange-500', text: 'text-orange-600' };
+    return { bg: 'bg-green-500', text: 'text-green-600' };
+  };
+
+  const colors = getScoreColor(riskScore);
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Risk Score</span>
+        <span className={`text-sm font-bold ${colors.text}`}>{riskScore}%</span>
+      </div>
+      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+        <div 
+          className={`h-2 rounded-full transition-all duration-300 ${colors.bg}`}
+          style={{ width: `${riskScore}%` }}
+        />
       </div>
     </div>
   );
 };
 
-// Metrics component for showing employee metrics
+// Metrics component with improved styling
 const EmployeeMetrics: React.FC<{ employee: Employee; compact?: boolean }> = ({ employee, compact = false }) => {
-  // Debug logging for real vs fake data
-  console.log(`📊 EmployeeMetrics for ${employee.name}:`, {
-    hasMetrics: !!employee.metrics,
-    metrics: employee.metrics,
-    dataSource: employee.metrics ? 'DATABASE' : 'NO_DATA'
-  });
-  
   if (!employee.metrics) {
-    console.log(`❌ No metrics found for ${employee.name} - showing placeholder`);
     return (
       <div className="text-xs text-gray-500 dark:text-gray-400 italic">
         No metrics available
@@ -134,7 +142,6 @@ const EmployeeMetrics: React.FC<{ employee: Employee; compact?: boolean }> = ({ 
     );
   }
 
-  // Real database metrics
   const metrics = [
     { 
       icon: Mail, 
@@ -182,131 +189,49 @@ const EmployeeMetrics: React.FC<{ employee: Employee; compact?: boolean }> = ({ 
   );
 };
 
-// Compliance section component for showing detailed compliance information
-const ComplianceSection: React.FC<{ employee: Employee; layout: 'grid' | 'list' | 'compact' }> = ({ employee, layout }) => {
-  const getComplianceScoreColor = (status?: string) => {
-    switch (status) {
-      case 'compliant': return 'text-green-600 dark:text-green-400';
-      case 'non_compliant': return 'text-red-600 dark:text-red-400';
-      case 'needs_review': return 'text-yellow-600 dark:text-yellow-400';
-      case 'overdue': return 'text-red-600 dark:text-red-400';
-      default: return 'text-gray-600 dark:text-gray-400';
-    }
-  };
+// Risk factors badges
+const RiskFactors: React.FC<{ employee: Employee }> = ({ employee }) => {
+  const violationCount = employee.violationCount || employee.violations?.length || 0;
+  const factors = [];
 
-  const getComplianceScore = () => {
-    if (employee.complianceStatus === 'compliant') return Math.floor(85 + Math.random() * 15);
-    if (employee.complianceStatus === 'needs_review') return Math.floor(65 + Math.random() * 20);
-    if (employee.complianceStatus === 'non_compliant') return Math.floor(20 + Math.random() * 45);
-    if (employee.complianceStatus === 'overdue') return Math.floor(10 + Math.random() * 30);
-    return Math.floor(60 + Math.random() * 40);
-  };
-
-  const complianceScore = getComplianceScore();
-
-  if (layout === 'compact') {
-    return (
-      <div className="flex items-center space-x-2">
-        <ComplianceIndicator status={employee.complianceStatus} size="sm" />
-        <span className={`text-xs font-medium ${getComplianceScoreColor(employee.complianceStatus)}`}>
-          {complianceScore}%
-        </span>
-      </div>
-    );
+  if (employee.riskLevel === 'High' || employee.riskLevel === 'Critical') {
+    factors.push({
+      label: 'High Risk',
+      color: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+    });
   }
 
-  if (layout === 'list') {
-    return (
-      <div className="flex items-center justify-between mt-2 p-2 bg-gray-50 dark:bg-gray-700 rounded">
-        <div className="flex items-center space-x-3">
-          <ComplianceIndicator status={employee.complianceStatus} size="sm" />
-          <div className="text-xs">
-            <span className="text-gray-600 dark:text-gray-400">Compliance: </span>
-            <span className={`font-medium ${getComplianceScoreColor(employee.complianceStatus)}`}>
-              {complianceScore}%
-            </span>
-          </div>
-          {employee.complianceProfile && (
-            <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
-          )}
-        </div>
-        <div className="flex items-center space-x-2">
-          {employee.reviewStatus === 'overdue' && (
-            <span className="text-xs text-orange-600 dark:text-orange-400 flex items-center">
-              <Clock className="w-3 h-3 mr-1" />
-              Review Due
-            </span>
-          )}
-          {employee.retentionStatus === 'overdue' && (
-            <span className="text-xs text-red-600 dark:text-red-400 flex items-center">
-              <AlertTriangle className="w-3 h-3 mr-1" />
-              Retention
-            </span>
-          )}
-        </div>
-      </div>
-    );
+  if (violationCount > 0) {
+    factors.push({
+      label: `${violationCount} Violation${violationCount > 1 ? 's' : ''}`,
+      color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+    });
   }
 
-  // Grid layout - comprehensive view
+  if (!employee.complianceProfile) {
+    factors.push({
+      label: 'No Compliance Profile',
+      color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
+    });
+  }
+
+  if (factors.length === 0) {
+    factors.push({
+      label: 'Low Risk',
+      color: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+    });
+  }
+
   return (
-    <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center space-x-2">
-          <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          <span className="text-sm font-medium text-gray-900 dark:text-white">Compliance</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className={`text-lg font-bold ${getComplianceScoreColor(employee.complianceStatus)}`}>
-            {complianceScore}%
+    <div className="mb-4">
+      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Risk Factors</h4>
+      <div className="flex flex-wrap gap-1">
+        {factors.map((factor, index) => (
+          <span key={index} className={`px-2 py-1 rounded-full text-xs ${factor.color}`}>
+            {factor.label}
           </span>
-          <ComplianceIndicator status={employee.complianceStatus} size="sm" />
-        </div>
+        ))}
       </div>
-      
-      {/* Compliance Profile */}
-      {employee.complianceProfile && (
-        <div className="mb-2">
-          <ComplianceProfileBadge profile={employee.complianceProfile} size="sm" />
-        </div>
-      )}
-      
-      {/* Status indicators */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="text-gray-600 dark:text-gray-400">Review:</span>
-          <span className={`font-medium ${
-            employee.reviewStatus === 'up_to_date' ? 'text-green-600 dark:text-green-400' :
-            employee.reviewStatus === 'due_soon' ? 'text-yellow-600 dark:text-yellow-400' :
-            employee.reviewStatus === 'overdue' ? 'text-red-600 dark:text-red-400' :
-            'text-gray-600 dark:text-gray-400'
-          }`}>
-            {employee.reviewStatus === 'up_to_date' ? '✓' :
-             employee.reviewStatus === 'due_soon' ? '⚠' :
-             employee.reviewStatus === 'overdue' ? '!' : '?'}
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-gray-600 dark:text-gray-400">Retention:</span>
-          <span className={`font-medium ${
-            employee.retentionStatus === 'compliant' ? 'text-green-600 dark:text-green-400' :
-            employee.retentionStatus === 'due_soon' ? 'text-yellow-600 dark:text-yellow-400' :
-            employee.retentionStatus === 'overdue' ? 'text-red-600 dark:text-red-400' :
-            'text-gray-600 dark:text-gray-400'
-          }`}>
-            {employee.retentionStatus === 'compliant' ? '✓' :
-             employee.retentionStatus === 'due_soon' ? '⚠' :
-             employee.retentionStatus === 'overdue' ? '!' : '?'}
-          </span>
-        </div>
-      </div>
-      
-      {/* Last review date */}
-      {employee.lastComplianceReview && (
-        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Last review: {formatTimeAgo(employee.lastComplianceReview)}
-        </div>
-      )}
     </div>
   );
 };
@@ -316,61 +241,101 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
   onViewDetails, 
   layout = 'grid',
   showMetrics = false,
-  showCompliance = true, // Default to true since compliance is important
+  showCompliance = true,
   className = ''
 }) => {
   const violationCount = employee.violationCount || employee.violations?.length || 0;
 
-  // Grid Layout (Default)
+  // Grid Layout (Default) - New improved design
   if (layout === 'grid') {
     return (
-      <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border-2 ${getRiskBorderColor(employee.riskLevel)} p-6 hover:shadow-md transition-all duration-200 cursor-pointer ${className}`}
+      <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow cursor-pointer ${className}`}
            onClick={() => onViewDetails(employee)}>
-        <div className="flex items-center space-x-4">
-          <Avatar employee={employee} size="md" />
-          
-          <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900 dark:text-white">{employee.name}</h3>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10`}>
-                {employee.riskLevel}
+        <div className="p-6">
+          {/* Header */}
+          <div className="flex items-start space-x-4 mb-4">
+            <div className="flex-shrink-0">
+              <Avatar employee={employee} size="md" />
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center space-x-2 mb-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                  {employee.name}
+                </h3>
+                {showCompliance && employee.complianceStatus && (
+                  <ComplianceStatusBadge status={employee.complianceStatus} />
+                )}
+              </div>
+              
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                {employee.jobTitle || employee.role} • {employee.department}
+              </p>
+              
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {employee.email}
+              </p>
+            </div>
+          </div>
+
+          {/* Risk Score Bar */}
+          <RiskScoreBar employee={employee} />
+
+          {/* Compliance Profile */}
+          {showCompliance && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Compliance Profile</span>
+                {employee.complianceProfile ? (
+                  <span className="text-sm text-blue-600 dark:text-blue-400">
+                    {employee.complianceProfile}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Not assigned</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Last Activity */}
+          <div className="mb-4">
+            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+              <Calendar className="w-4 h-4 mr-2" />
+              <span>
+                Last activity: {formatTimeAgo(employee.lastActivity)}
               </span>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-300">{employee.jobTitle || employee.role}</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{employee.department}</p>
-            
-            <div className="flex items-center space-x-4 mt-3">
-              <div className="flex items-center space-x-1">
-                <Calendar className="w-4 h-4 text-gray-400" />
-                <span className="text-xs text-gray-500 dark:text-gray-400">{formatTimeAgo(employee.lastActivity)}</span>
-              </div>
-              {violationCount > 0 && (
-                <div className="flex items-center space-x-1">
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                  <span className="text-xs text-red-600">
-                    {violationCount} violation{violationCount > 1 ? 's' : ''}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {showMetrics && <EmployeeMetrics employee={employee} />}
-            
-            {/* Comprehensive Compliance Section */}
-            {showCompliance && (
-              <ComplianceSection employee={employee} layout="grid" />
-            )}
           </div>
-          
-          <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200 rounded-full transition-colors">
-            <Eye className="w-5 h-5" />
-          </button>
+
+          {/* Risk Factors */}
+          <RiskFactors employee={employee} />
+
+          {/* Metrics */}
+          {showMetrics && <EmployeeMetrics employee={employee} />}
+
+          {/* Actions */}
+          <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDetails(employee);
+              }}
+              className="flex items-center px-3 py-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+            >
+              <Eye className="w-4 h-4 mr-1" />
+              View Details
+            </button>
+            
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10`}>
+              {employee.riskLevel}
+            </span>
+          </div>
         </div>
       </div>
     );
   }
 
-  // List Layout
+  // List Layout - Simplified version
   if (layout === 'list') {
     return (
       <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 cursor-pointer ${className}`}
@@ -385,17 +350,15 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10`}>
                   {employee.riskLevel}
                 </span>
+                {showCompliance && employee.complianceStatus && (
+                  <ComplianceStatusBadge status={employee.complianceStatus} />
+                )}
               </div>
               <div className="flex items-center space-x-4 mt-1">
                 <p className="text-sm text-gray-600 dark:text-gray-300">{employee.jobTitle || employee.role}</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">•</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{employee.department}</p>
               </div>
-              
-              {/* Comprehensive Compliance Section for list layout */}
-              {showCompliance && (
-                <ComplianceSection employee={employee} layout="list" />
-              )}
             </div>
           </div>
           
@@ -415,7 +378,13 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
               )}
             </div>
             
-            <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-200 rounded transition-colors">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDetails(employee);
+              }}
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-200 rounded transition-colors"
+            >
               <Eye className="w-4 h-4" />
             </button>
           </div>
@@ -424,7 +393,7 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
     );
   }
 
-  // Compact Layout
+  // Compact Layout - Minimal version
   if (layout === 'compact') {
     return (
       <div className={`bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 p-3 hover:shadow-sm transition-all duration-200 cursor-pointer ${className}`}
@@ -438,9 +407,8 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
               <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getRiskTextColor(employee.riskLevel)} bg-opacity-10 flex-shrink-0`}>
                 {employee.riskLevel}
               </span>
-              {/* Compact compliance section */}
-              {showCompliance && (
-                <ComplianceSection employee={employee} layout="compact" />
+              {showCompliance && employee.complianceStatus && (
+                <ComplianceIndicator status={employee.complianceStatus} size="sm" />
               )}
             </div>
             <div className="flex items-center space-x-2 mt-1">
@@ -454,7 +422,13 @@ export const EmployeeCard: React.FC<EmployeeCardProps> = ({
             </div>
           </div>
           
-          <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-200 rounded transition-colors flex-shrink-0">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewDetails(employee);
+            }}
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-200 rounded transition-colors flex-shrink-0"
+          >
             <Eye className="w-4 h-4" />
           </button>
         </div>

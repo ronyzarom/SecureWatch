@@ -15,16 +15,15 @@ import {
   RefreshCw,
   Download,
   MoreVertical,
-  Shield,
-  Plus,
-  Flag
+  X
 } from 'lucide-react';
+import { ViolationCard } from '../components/ViolationCard';
 import { ViolationStatusBadge } from '../components/ViolationStatusBadge';
 import { ViolationStatusManager } from '../components/ViolationStatusManager';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorMessage } from '../components/ErrorMessage';
-import { violationAPI, complianceAPI } from '../services/api';
-import { ComplianceIncident } from '../types';
+import EmployeeAvatar from '../components/EmployeeAvatar';
+import { violationAPI } from '../services/api';
 
 interface Violation {
   id: number;
@@ -50,12 +49,7 @@ interface Violation {
   };
 }
 
-type TabType = 'violations' | 'incidents';
-
 export const ViolationsPage: React.FC = () => {
-  // Tab management
-  const [activeTab, setActiveTab] = useState<TabType>('violations');
-  
   // Violations state (existing)
   const [violations, setViolations] = useState<Violation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,14 +58,6 @@ export const ViolationsPage: React.FC = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [statistics, setStatistics] = useState<any>(null);
   
-  // Compliance Incidents state (new)
-  const [incidents, setIncidents] = useState<ComplianceIncident[]>([]);
-  const [incidentsLoading, setIncidentsLoading] = useState(false);
-  const [incidentsError, setIncidentsError] = useState<string | null>(null);
-  const [selectedIncident, setSelectedIncident] = useState<ComplianceIncident | null>(null);
-  const [showIncidentModal, setShowIncidentModal] = useState(false);
-  const [showCreateIncidentModal, setShowCreateIncidentModal] = useState(false);
-
   // Filters
   const [filters, setFilters] = useState({
     search: '',
@@ -85,7 +71,7 @@ export const ViolationsPage: React.FC = () => {
   // Pagination
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 20,
+    limit: 12, // Better for card grid layout (3 columns × 4 rows)
     total: 0,
     totalPages: 0
   });
@@ -107,13 +93,9 @@ export const ViolationsPage: React.FC = () => {
   ];
 
   useEffect(() => {
-    if (activeTab === 'violations') {
-      fetchViolations();
-      fetchStatistics();
-    } else if (activeTab === 'incidents') {
-      fetchIncidents();
-    }
-  }, [filters, pagination.page, pagination.limit, activeTab]);
+    fetchViolations();
+    fetchStatistics();
+  }, [filters, pagination.page, pagination.limit]);
 
   const fetchViolations = async () => {
     console.log('🔧 Debug: fetchViolations called with filters:', filters, 'pagination:', pagination);
@@ -160,46 +142,6 @@ export const ViolationsPage: React.FC = () => {
     }
   };
 
-  const fetchIncidents = async () => {
-    console.log('🔧 Debug: fetchIncidents called');
-    setIncidentsLoading(true);
-    setIncidentsError(null);
-
-    try {
-      const response = await complianceAPI.incidents.getAll();
-      console.log('🔧 Debug: Incidents API response:', response);
-      
-      setIncidents(response.incidents || []);
-      console.log('🔧 Debug: Updated incidents state with', (response.incidents || []).length, 'items');
-    } catch (err: any) {
-      console.error('❌ Debug: fetchIncidents error:', err);
-      setIncidentsError(err.response?.data?.error || 'Failed to fetch compliance incidents');
-    } finally {
-      setIncidentsLoading(false);
-    }
-  };
-
-  const handleCreateIncident = async (data: any) => {
-    try {
-      await complianceAPI.incidents.create(data);
-      setShowCreateIncidentModal(false);
-      fetchIncidents();
-    } catch (err) {
-      console.error('Error creating incident:', err);
-      setIncidentsError('Failed to create incident');
-    }
-  };
-
-  const handleUpdateIncidentStatus = async (incident: ComplianceIncident, status: string) => {
-    try {
-      await complianceAPI.incidents.update(incident.id, { status });
-      fetchIncidents();
-    } catch (err) {
-      console.error('Error updating incident status:', err);
-      setIncidentsError('Failed to update incident status');
-    }
-  };
-
   const handleStatusChange = async (violationId: number, newStatus: string, reason: string) => {
     console.log('🔧 Debug: ViolationsPage handleStatusChange called with:', { violationId, newStatus, reason });
     
@@ -242,31 +184,6 @@ export const ViolationsPage: React.FC = () => {
     }
   };
 
-  const handleAIValidation = async (violationId: number, additionalContext?: string) => {
-    console.log('🤖 AI Validation requested for violation:', violationId, 'with context:', additionalContext);
-    
-    try {
-      console.log('🔄 Calling violationAPI.requestAIValidation...');
-      const result = await violationAPI.requestAIValidation(violationId, 'evidence_validation', additionalContext);
-      console.log('✅ AI validation API response:', result);
-      
-      // Show success message and refresh data
-      alert('🤖 AI validation request submitted successfully. Results will be available shortly.');
-      
-      // Refresh the violation data to show any updates
-      setTimeout(async () => {
-        await fetchViolations();
-        await fetchStatistics();
-      }, 1000);
-      
-    } catch (err: any) {
-      console.error('❌ AI validation error:', err);
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to request AI validation';
-      alert(`❌ AI Validation Error: ${errorMessage}`);
-      throw new Error(errorMessage);
-    }
-  };
-
   const handleViewDetails = async (violation: Violation) => {
     try {
       const detailedViolation = await violationAPI.getById(violation.id);
@@ -274,16 +191,6 @@ export const ViolationsPage: React.FC = () => {
       setShowDetailsModal(true);
     } catch (err) {
       console.error('Failed to fetch violation details:', err);
-    }
-  };
-
-  const getRiskColor = (severity: string) => {
-    switch (severity) {
-      case 'Critical': return 'text-red-600 bg-red-50 dark:bg-red-900/20';
-      case 'High': return 'text-orange-600 bg-orange-50 dark:bg-orange-900/20';
-      case 'Medium': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20';
-      case 'Low': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20';
-      default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20';
     }
   };
 
@@ -297,6 +204,16 @@ export const ViolationsPage: React.FC = () => {
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) return `${diffInDays}d ago`;
     return date.toLocaleDateString();
+  };
+
+  const getRiskColor = (severity: string) => {
+    switch (severity) {
+      case 'Critical': return 'text-red-600 bg-red-50 dark:bg-red-900/20';
+      case 'High': return 'text-orange-600 bg-orange-50 dark:bg-orange-900/20';
+      case 'Medium': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20';
+      case 'Low': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20';
+      default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20';
+    }
   };
 
   const exportViolations = async () => {
@@ -333,7 +250,7 @@ export const ViolationsPage: React.FC = () => {
         'Updated Date'
       ];
 
-      const csvRows = violationsData.map(violation => [
+      const csvRows = violationsData.map((violation: Violation) => [
         violation.id,
         violation.type,
         violation.severity,
@@ -351,7 +268,7 @@ export const ViolationsPage: React.FC = () => {
       // Create CSV content
       const csvContent = [
         csvHeaders.join(','),
-        ...csvRows.map(row => row.join(','))
+        ...csvRows.map((row: any[]) => row.join(','))
       ].join('\n');
 
       // Create and download file
@@ -384,71 +301,30 @@ export const ViolationsPage: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
             <AlertTriangle className="w-8 h-8 mr-3 text-red-600" />
-            Violations & Incidents
+            Security Violations
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Manage security violations and compliance incidents
+            Manage and investigate security violations
           </p>
         </div>
         <div className="flex space-x-3">
           <button
             onClick={() => {
               console.log('🔧 Manual refresh triggered');
-              if (activeTab === 'violations') {
-                fetchViolations();
-                fetchStatistics();
-              } else {
-                fetchIncidents();
-              }
+              fetchViolations();
+              fetchStatistics();
             }}
             className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Refresh</span>
           </button>
-          {activeTab === 'incidents' && (
-            <button
-              onClick={() => setShowCreateIncidentModal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Incident</span>
-            </button>
-          )}
           <button 
             onClick={exportViolations}
             className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
           >
             <Download className="w-4 h-4" />
             <span>Export</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="flex overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('violations')}
-            className={`flex items-center px-6 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === 'violations'
-                ? 'border-red-600 text-red-600 bg-red-50 dark:bg-red-900/20'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-            }`}
-          >
-            <XCircle className="w-5 h-5 mr-2" />
-            Security Violations
-          </button>
-          <button
-            onClick={() => setActiveTab('incidents')}
-            className={`flex items-center px-6 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === 'incidents'
-                ? 'border-orange-600 text-orange-600 bg-orange-50 dark:bg-orange-900/20'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-            }`}
-          >
-            <Shield className="w-5 h-5 mr-2" />
-            Compliance Incidents
           </button>
         </div>
       </div>
@@ -577,393 +453,109 @@ export const ViolationsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'violations' ? (
-        <>
-          {/* Violations List */}
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <LoadingSpinner size="lg" />
-            </div>
-          ) : error ? (
-            <ErrorMessage message={error} />
-          ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full" key={`violations-table-${violations.length}-${Date.now()}`}>
-                  <thead className="bg-gray-50 dark:bg-gray-700">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Violation
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Employee
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        AI Validation
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Created
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {violations.map((violation) => (
-                      <tr key={violation.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-6 py-4">
-                          <div className="flex items-start space-x-3">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(violation.severity)}`}>
-                              {violation.severity}
-                            </span>
-                            <div>
-                              <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                {violation.type}
-                              </div>
-                              <div className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">
-                                {violation.description}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="flex items-center space-x-3">
-                            <img
-                              src={violation.employee.photo}
-                              alt={violation.employee.name}
-                              className="w-8 h-8 rounded-full"
-                            />
-                            <div>
-                              <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                {violation.employee.name}
-                              </div>
-                              <div className="text-sm text-gray-500 dark:text-gray-400">
-                                {violation.employee.department}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <ViolationStatusManager
-                            violation={violation}
-                            onStatusChange={handleStatusChange}
-                            onAIValidate={handleAIValidation}
-                            canEdit={true}
-                          />
-                        </td>
-
-                        <td className="px-6 py-4">
-                          {violation.aiValidationStatus && violation.aiValidationScore ? (
-                            <div className="flex items-center space-x-2">
-                              <Bot className="w-4 h-4 text-blue-500" />
-                              <span className="text-sm text-gray-600 dark:text-gray-400">
-                                {violation.aiValidationScore}% confidence
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-sm text-gray-400">Not validated</span>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                          {formatTimeAgo(violation.createdAt)}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => handleViewDetails(violation)}
-                            className="flex items-center space-x-1 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            <Eye className="w-4 h-4" />
-                            <span className="text-sm">View</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              {pagination.totalPages > 1 && (
-                <div className="bg-white dark:bg-gray-800 px-6 py-3 border-t border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="text-sm text-gray-700 dark:text-gray-300">
-                        Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-                        {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-                        {pagination.total} results
-                      </div>
-                      
-                      {/* Page Size Selector */}
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Show:</span>
-                        <select
-                          value={pagination.limit}
-                          onChange={(e) => {
-                            const newLimit = parseInt(e.target.value);
-                            setPagination(prev => ({ 
-                              ...prev, 
-                              limit: newLimit, 
-                              page: 1 // Reset to first page when changing page size
-                            }));
-                          }}
-                          className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value={10}>10</option>
-                          <option value={20}>20</option>
-                          <option value={50}>50</option>
-                          <option value={100}>100</option>
-                        </select>
-                        <span className="text-sm text-gray-600 dark:text-gray-400">per page</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      {/* First Page */}
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: 1 }))}
-                        disabled={pagination.page === 1}
-                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
-                        title="First page"
-                      >
-                        ⇤
-                      </button>
-
-                      {/* Previous Page */}
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                        disabled={pagination.page === 1}
-                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
-                      >
-                        ← Previous
-                      </button>
-
-                      {/* Page Numbers */}
-                      <div className="flex items-center space-x-1">
-                        {(() => {
-                          const currentPage = pagination.page;
-                          const totalPages = pagination.totalPages;
-                          const pages = [];
-                          
-                          // Always show first page
-                          if (currentPage > 3) {
-                            pages.push(
-                              <button
-                                key={1}
-                                onClick={() => setPagination(prev => ({ ...prev, page: 1 }))}
-                                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
-                              >
-                                1
-                              </button>
-                            );
-                            if (currentPage > 4) {
-                              pages.push(<span key="ellipsis1" className="px-2 text-gray-500">...</span>);
-                            }
-                          }
-
-                          // Show pages around current page
-                          for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
-                            pages.push(
-                              <button
-                                key={i}
-                                onClick={() => setPagination(prev => ({ ...prev, page: i }))}
-                                className={`px-3 py-1 border rounded text-sm ${
-                                  i === currentPage
-                                    ? 'bg-blue-600 text-white border-blue-600'
-                                    : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                }`}
-                              >
-                                {i}
-                              </button>
-                            );
-                          }
-
-                          // Always show last page
-                          if (currentPage < totalPages - 2) {
-                            if (currentPage < totalPages - 3) {
-                              pages.push(<span key="ellipsis2" className="px-2 text-gray-500">...</span>);
-                            }
-                            pages.push(
-                              <button
-                                key={totalPages}
-                                onClick={() => setPagination(prev => ({ ...prev, page: totalPages }))}
-                                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
-                              >
-                                {totalPages}
-                              </button>
-                            );
-                          }
-
-                          return pages;
-                        })()}
-                      </div>
-
-                      {/* Next Page */}
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                        disabled={pagination.page === pagination.totalPages}
-                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
-                      >
-                        Next →
-                      </button>
-
-                      {/* Last Page */}
-                      <button
-                        onClick={() => setPagination(prev => ({ ...prev, page: pagination.totalPages }))}
-                        disabled={pagination.page === pagination.totalPages}
-                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
-                        title="Last page"
-                      >
-                        ⇥
-                      </button>
-
-                      {/* Page Input */}
-                      <div className="flex items-center space-x-2 ml-4">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Go to:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={pagination.totalPages}
-                          value={pagination.page}
-                          onChange={(e) => {
-                            const page = parseInt(e.target.value);
-                            if (page >= 1 && page <= pagination.totalPages) {
-                              setPagination(prev => ({ ...prev, page }));
-                            }
-                          }}
-                          className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </>
+      {/* Violations List */}
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <LoadingSpinner size="lg" />
+        </div>
+      ) : error ? (
+        <ErrorMessage message={error} />
       ) : (
         <>
-          {/* Compliance Incidents List */}
-          {incidentsLoading ? (
-            <div className="flex justify-center py-12">
-              <LoadingSpinner size="lg" />
-            </div>
-          ) : incidentsError ? (
-            <ErrorMessage message={incidentsError} />
-          ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Incident
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Severity
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Created
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {incidents.map((incident) => (
-                      <tr key={incident.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-6 py-4">
-                          <div className="flex items-start space-x-3">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              incident.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
-                              incident.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
-                              incident.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                              'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                            }`}>
-                              {incident.severity}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                {incident.title}
-                              </p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                {incident.incident_type}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            incident.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
-                            incident.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
-                            incident.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                            'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                          }`}>
-                            {incident.severity}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            incident.status === 'open' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
-                            incident.status === 'investigating' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                            incident.status === 'resolved' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                            'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
-                          }`}>
-                            {incident.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                          {new Date(incident.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => {
-                                setSelectedIncident(incident);
-                                setShowIncidentModal(true);
-                              }}
-                              className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <select
-                              value={incident.status}
-                              onChange={(e) => handleUpdateIncidentStatus(incident, e.target.value)}
-                              className="text-xs border rounded px-2 py-1 dark:bg-gray-700 dark:border-gray-600"
-                            >
-                              <option value="open">Open</option>
-                              <option value="investigating">Investigating</option>
-                              <option value="resolved">Resolved</option>
-                              <option value="closed">Closed</option>
-                            </select>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              
-              {incidents.length === 0 && (
-                <div className="text-center py-12">
-                  <Shield className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 dark:text-gray-400">
-                    No compliance incidents found
-                  </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {violations.map((violation) => (
+              <ViolationCard
+                key={violation.id}
+                violation={violation}
+                onViewDetails={() => handleViewDetails(violation)}
+                onStatusChange={handleStatusChange}
+              />
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {violations.length > 0 && pagination.totalPages > 1 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
+                    {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
+                    {pagination.total} results
+                  </div>
+                  
+                  {/* Page Size Selector */}
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Show:</span>
+                    <select
+                      value={pagination.limit}
+                      onChange={(e) => {
+                        const newLimit = parseInt(e.target.value);
+                        setPagination(prev => ({ 
+                          ...prev, 
+                          limit: newLimit, 
+                          page: 1
+                        }));
+                      }}
+                      className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value={9}>9</option>
+                      <option value={12}>12</option>
+                      <option value={18}>18</option>
+                      <option value={24}>24</option>
+                    </select>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">per page</span>
+                  </div>
                 </div>
-              )}
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+                    disabled={pagination.page === 1}
+                    className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Previous
+                  </button>
+                  
+                  {/* Page numbers */}
+                  <div className="flex items-center space-x-1">
+                    {Array.from({ length: Math.min(pagination.totalPages, 5) }, (_, i) => {
+                      let pageNum;
+                      if (pagination.totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (pagination.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (pagination.page >= pagination.totalPages - 2) {
+                        pageNum = pagination.totalPages - 4 + i;
+                      } else {
+                        pageNum = pagination.page - 2 + i;
+                      }
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setPagination(prev => ({ ...prev, page: pageNum }))}
+                          className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                            pageNum === pagination.page
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  <button
+                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+                    disabled={pagination.page === pagination.totalPages}
+                    className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -971,127 +563,181 @@ export const ViolationsPage: React.FC = () => {
 
       {/* Detailed Violation Modal */}
       {showDetailsModal && selectedViolation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-screen overflow-y-auto">
-            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Violation Details
-                </h2>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between px-6 py-4">
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Violation Details
+                    </h2>
+                  </div>
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getRiskColor(selectedViolation.severity)}`}>
+                    {selectedViolation.severity}
+                  </span>
+                  <ViolationStatusBadge status={selectedViolation.status} />
+                </div>
                 <button
                   onClick={() => setShowDetailsModal(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                 >
-                  <XCircle className="w-6 h-6" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            <div className="p-6 space-y-6">
-              {/* Violation Header */}
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-3">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getRiskColor(selectedViolation.severity)}`}>
-                      {selectedViolation.severity}
-                    </span>
-                    <ViolationStatusBadge status={selectedViolation.status} />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                    {selectedViolation.type}
-                  </h3>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    {selectedViolation.description}
-                  </p>
-                </div>
-              </div>
-
-              {/* Employee Info */}
-              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Employee</h4>
-                <div className="flex items-center space-x-3">
-                  <img
-                    src={selectedViolation.employee.photo}
-                    alt={selectedViolation.employee.name}
-                    className="w-12 h-12 rounded-full"
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900 dark:text-white">
-                      {selectedViolation.employee.name}
+            {/* Content */}
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
+              <div className="p-6 space-y-6">
+                {/* Violation Summary */}
+                <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20 rounded-lg p-6 border border-red-100 dark:border-red-800">
+                  <div className="flex items-start space-x-4">
+                    <div className="flex-shrink-0">
+                      <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                        <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {selectedViolation.employee.email} • {selectedViolation.employee.department}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                        {selectedViolation.type}
+                      </h3>
+                      <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                        {selectedViolation.description}
+                      </p>
+                      <div className="flex items-center space-x-4 mt-4 text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="w-4 h-4" />
+                          <span>Created {formatTimeAgo(selectedViolation.createdAt)}</span>
+                        </div>
+                        {selectedViolation.updatedAt !== selectedViolation.createdAt && (
+                          <div className="flex items-center space-x-1">
+                            <Clock className="w-4 h-4" />
+                            <span>Updated {formatTimeAgo(selectedViolation.updatedAt)}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Evidence */}
-              {selectedViolation.evidence && selectedViolation.evidence.length > 0 && (
-                <div>
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-3">Evidence</h4>
-                  <div className="space-y-2">
-                    {selectedViolation.evidence.map((item, index) => (
-                      <div key={index} className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-                        <FileText className="w-4 h-4" />
-                        <span>{item}</span>
-                      </div>
-                    ))}
+                {/* Employee Information */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <User className="w-5 h-5 mr-2 text-gray-500" />
+                    Employee Information
+                  </h4>
+                  <div className="flex items-center space-x-4">
+                    <EmployeeAvatar employee={selectedViolation.employee} size="xl" />
+                    <div className="flex-1">
+                      <h5 className="text-lg font-medium text-gray-900 dark:text-white">
+                        {selectedViolation.employee.name}
+                      </h5>
+                      <p className="text-gray-600 dark:text-gray-400">
+                        {selectedViolation.employee.email}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-500">
+                        {selectedViolation.employee.department}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {/* AI Validation */}
-              {selectedViolation.aiValidationStatus && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <Bot className="w-5 h-5 text-blue-500" />
-                    <h4 className="font-medium text-gray-900 dark:text-white">AI Validation</h4>
-                  </div>
-                  
-                  {selectedViolation.aiValidationScore && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Confidence Score</span>
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {selectedViolation.aiValidationScore}%
-                        </span>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Evidence */}
+                  {selectedViolation.evidence && selectedViolation.evidence.length > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        <FileText className="w-5 h-5 mr-2 text-gray-500" />
+                        Evidence
+                      </h4>
+                      <div className="space-y-3">
+                        {selectedViolation.evidence.map((item, index) => (
+                          <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                            <div className="flex-shrink-0 w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5">
+                              <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                                {index + 1}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                              {item}
+                            </p>
+                          </div>
+                        ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* AI Validation */}
+                  {selectedViolation.aiValidationStatus && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        <Bot className="w-5 h-5 mr-2 text-blue-500" />
+                        AI Validation
+                      </h4>
                       
-                      {selectedViolation.aiValidationReasoning && (
-                        <div>
-                          <span className="text-sm text-gray-600 dark:text-gray-400 block mb-1">Analysis</span>
-                          <p className="text-sm text-gray-700 dark:text-gray-300">
-                            {selectedViolation.aiValidationReasoning}
-                          </p>
+                      {selectedViolation.aiValidationScore && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                              Confidence Score
+                            </span>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-20 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                <div 
+                                  className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${selectedViolation.aiValidationScore}%` }}
+                                />
+                              </div>
+                              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+                                {selectedViolation.aiValidationScore}%
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {selectedViolation.aiValidationReasoning && (
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                AI Analysis
+                              </h5>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 leading-relaxed">
+                                {selectedViolation.aiValidationReasoning}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   )}
                 </div>
-              )}
 
-              {/* Metadata */}
-              {selectedViolation.metadata && Object.keys(selectedViolation.metadata).length > 0 && (
-                <div>
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-3">Additional Information</h4>
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
-                    <pre className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
-                      {JSON.stringify(selectedViolation.metadata, null, 2)}
-                    </pre>
+                {/* Additional Information */}
+                {selectedViolation.metadata && Object.keys(selectedViolation.metadata).length > 0 && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                      Additional Information
+                    </h4>
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 overflow-x-auto">
+                      <pre className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap font-mono">
+                        {JSON.stringify(selectedViolation.metadata, null, 2)}
+                      </pre>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Status Management */}
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Manage Status</h4>
-                <ViolationStatusManager
-                  violation={selectedViolation}
-                  onStatusChange={handleStatusChange}
-                  onAIValidate={handleAIValidation}
-                  canEdit={true}
-                />
+                {/* Status Management */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
+                    Manage Status
+                  </h4>
+                  <ViolationStatusManager
+                    violation={selectedViolation}
+                    onStatusChange={handleStatusChange}
+                  />
+                </div>
               </div>
             </div>
           </div>

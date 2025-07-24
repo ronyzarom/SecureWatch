@@ -167,6 +167,10 @@ router.get('/', async (req, res) => {
         e.risk_level,
         e.last_activity,
         e.photo_url as photo,
+        e.compliance_profile_id,
+        e.last_compliance_review,
+        e.data_retention_until,
+        cp.profile_name as compliance_profile,
         COUNT(v.id) as violation_count,
         COUNT(CASE WHEN v.status = 'Active' THEN 1 END) as active_violations,
         -- Get latest metrics for each employee
@@ -178,6 +182,7 @@ router.get('/', async (req, res) => {
         em.behavior_change
       FROM employees e
       LEFT JOIN violations v ON e.id = v.employee_id
+      LEFT JOIN compliance_profiles cp ON e.compliance_profile_id = cp.id
       LEFT JOIN LATERAL (
         SELECT 
           email_volume, external_contacts, after_hours_activity,
@@ -189,6 +194,7 @@ router.get('/', async (req, res) => {
       ) em ON true
       WHERE ${whereClause}
       GROUP BY e.id, e.name, e.email, e.department, e.job_title, e.risk_score, e.risk_level, e.last_activity, e.photo_url,
+               e.compliance_profile_id, e.last_compliance_review, e.data_retention_until, cp.profile_name,
                em.email_volume, em.external_contacts, em.after_hours_activity, em.data_transfer, em.security_events, em.behavior_change
       ORDER BY e.${finalSortBy} ${finalSortOrder}
       LIMIT $${paramCount - 1} OFFSET $${paramCount}
@@ -205,30 +211,74 @@ router.get('/', async (req, res) => {
     const totalPages = Math.ceil(total / limit);
 
     res.json({
-      employees: employeesResult.rows.map(row => ({
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        department: row.department,
-        jobTitle: row.job_title,
-        role: row.job_title, // Ensure role field exists
-        riskScore: row.risk_score,
-        riskLevel: row.risk_level,
-        lastActivity: row.last_activity,
-        photo: row.photo,
-        violationCount: parseInt(row.violation_count),
-        activeViolations: parseInt(row.active_violations),
-        violations: [], // Empty array for consistency
-        // Use real metrics from database instead of random data
-        metrics: row.email_volume !== null ? {
-          emailVolume: row.email_volume || 0,
-          externalContacts: row.external_contacts || 0,
-          afterHoursActivity: row.after_hours_activity || 0,
-          dataTransfer: parseFloat(row.data_transfer) || 0,
-          securityEvents: row.security_events || 0,
-          behaviorChange: row.behavior_change || 0
-        } : null // No metrics if no data available
-      })),
+      employees: employeesResult.rows.map(row => {
+        // Calculate compliance status based on available data
+        const complianceStatus = row.compliance_profile_id 
+          ? (row.risk_level === 'Critical' || row.risk_level === 'High' ? 'needs_review' : 'compliant')
+          : 'non_compliant';
+        
+        // Calculate review status based on last compliance review
+        let reviewStatus = 'never_reviewed';
+        if (row.last_compliance_review) {
+          const reviewDate = new Date(row.last_compliance_review);
+          const daysSinceReview = Math.floor((Date.now() - reviewDate.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (daysSinceReview <= 365) {
+            reviewStatus = 'up_to_date';
+          } else if (daysSinceReview <= 400) {
+            reviewStatus = 'due_soon';
+          } else {
+            reviewStatus = 'overdue';
+          }
+        }
+        
+        // Calculate retention status
+        let retentionStatus = 'compliant';
+        if (row.data_retention_until) {
+          const retentionDate = new Date(row.data_retention_until);
+          const daysUntilRetention = Math.floor((retentionDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          
+          if (daysUntilRetention < 0) {
+            retentionStatus = 'overdue';
+          } else if (daysUntilRetention <= 30) {
+            retentionStatus = 'due_soon';
+          }
+        }
+
+        return {
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          department: row.department,
+          jobTitle: row.job_title,
+          role: row.job_title, // Ensure role field exists
+          riskScore: row.risk_score,
+          riskLevel: row.risk_level,
+          lastActivity: row.last_activity,
+          photo: row.photo,
+          violationCount: parseInt(row.violation_count),
+          activeViolations: parseInt(row.active_violations),
+          violations: [], // Empty array for consistency
+          
+          // Compliance-related fields
+          complianceProfileId: row.compliance_profile_id,
+          complianceProfile: row.compliance_profile,
+          complianceStatus: complianceStatus,
+          reviewStatus: reviewStatus,
+          retentionStatus: retentionStatus,
+          lastComplianceReview: row.last_compliance_review,
+          
+          // Use real metrics from database instead of random data
+          metrics: row.email_volume !== null ? {
+            emailVolume: row.email_volume || 0,
+            externalContacts: row.external_contacts || 0,
+            afterHoursActivity: row.after_hours_activity || 0,
+            dataTransfer: parseFloat(row.data_transfer) || 0,
+            securityEvents: row.security_events || 0,
+            behaviorChange: row.behavior_change || 0
+          } : null // No metrics if no data available
+        };
+      }),
       pagination: {
         page,
         limit,

@@ -8,7 +8,6 @@ import { MetricsCard } from './components/MetricsCard';
 import { EmployeeCard } from './components/EmployeeCard';
 import { EmployeeDetailsModal } from './components/EmployeeDetailsModal';
 import { NetworkAnalysis } from './components/NetworkAnalysis';
-import { RecentActivity } from './components/RecentActivity';
 import { ToastContainer } from './components/ToastContainer';
 
 import { EmailAnalytics } from './components/EmailAnalytics';
@@ -56,7 +55,7 @@ function App() {
   
   // Pagination state for employee list
   const [employeeCurrentPage, setEmployeeCurrentPage] = useState(1);
-  const [employeesPerPage, setEmployeesPerPage] = useState(6); // Default to 6 employees per page for better UI
+  const [employeesPerPage, setEmployeesPerPage] = useState(12); // Default to 12 employees per page to match Employees page
 
   // Check authentication and test API connection on app load
   useEffect(() => {
@@ -311,152 +310,150 @@ function App() {
                     value={employees.filter(emp => emp.complianceStatus === 'compliant').length.toString()}
                     icon={Shield}
                     color="text-green-600"
-                    subtitle={`${Math.round((employees.filter(emp => emp.complianceStatus === 'compliant').length / Math.max(employees.length, 1)) * 100)}% compliant`}
                   />
                   <MetricsCard
                     title="Compliance Reviews Due"
                     value={employees.filter(emp => emp.reviewStatus === 'overdue' || emp.reviewStatus === 'due_soon').length.toString()}
                     icon={Clock}
                     color="text-amber-600"
-                    subtitle={`${employees.filter(emp => emp.reviewStatus === 'overdue').length} overdue`}
                   />
                 </>
               )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-              {/* Employee Risk Gallery */}
-              <div className="lg:col-span-2">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Employee Risk Assessment</h2>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={refreshDashboard}
-                        className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                        title="Refresh data"
-                      >
-                        🔄 Refresh
-                      </button>
-                      <button
-                        onClick={() => setViewMode('high-risk')}
-                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                          viewMode === 'high-risk' 
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' 
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        High Risk Only
-                      </button>
-                      <button
-                        onClick={() => setViewMode('all')}
-                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                          viewMode === 'all' 
-                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' 
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        All Employees
-                      </button>
-                    </div>
+            <div className="space-y-8 mb-8">
+              {/* Employee Risk Gallery - Full Width */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Employee Risk Assessment</h2>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={refreshDashboard}
+                      className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      title="Refresh data"
+                    >
+                      🔄 Refresh
+                    </button>
+                    <button
+                      onClick={() => setViewMode('high-risk')}
+                      className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                        viewMode === 'high-risk' 
+                          ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' 
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      High Risk Only
+                    </button>
+                    <button
+                      onClick={() => setViewMode('all')}
+                      className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                        viewMode === 'all' 
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' 
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      All Employees
+                    </button>
                   </div>
-                  
-                  <div className="space-y-4">
-                    {displayedEmployees.map((employee) => (
-                      <EmployeeCard
-                        key={employee.id}
-                        employee={employee}
-                        onViewDetails={fetchEmployeeDetails}
-                        layout="list"
-                        showMetrics={true}
-                      />
-                    ))}
-                  </div>
+                </div>
+                
+                {/* Employee Cards Grid - Using Same Layout as Employees Page */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {displayedEmployees.map((employee) => (
+                    <EmployeeCard
+                      key={employee.id}
+                      employee={employee}
+                      onViewDetails={fetchEmployeeDetails}
+                      layout="grid"
+                      showMetrics={true}
+                      showCompliance={true}
+                    />
+                  ))}
+                </div>
 
-                  {/* Pagination Controls */}
-                  {(totalEmployees > 0) && (
-                    <div className="mt-6 border-t border-gray-200 dark:border-gray-600 pt-4">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-3 sm:space-y-0">
-                        <div className="flex items-center space-x-4">
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
-                            Showing {startIndex + 1} to {Math.min(endIndex, totalEmployees)} of {totalEmployees} employees
-                          </div>
-                          
-                          {/* Per page selector */}
-                          <div className="flex items-center space-x-2">
-                            <span className="text-sm text-gray-600 dark:text-gray-400">Show:</span>
-                            <select
-                              value={employeesPerPage}
-                              onChange={(e) => setEmployeesPerPage(Number(e.target.value))}
-                              className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                              <option value={3}>3</option>
-                              <option value={6}>6</option>
-                              <option value={9}>9</option>
-                              <option value={12}>12</option>
-                              <option value={18}>18</option>
-                            </select>
-                            <span className="text-sm text-gray-600 dark:text-gray-400">per page</span>
-                          </div>
+                {/* Pagination Controls */}
+                {(totalEmployees > 0) && (
+                  <div className="mt-6 border-t border-gray-200 dark:border-gray-600 pt-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-3 sm:space-y-0">
+                      <div className="flex items-center space-x-4">
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          Showing {startIndex + 1} to {Math.min(endIndex, totalEmployees)} of {totalEmployees} employees
                         </div>
                         
-                        {totalPages > 1 && (
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => setEmployeeCurrentPage(employeeCurrentPage - 1)}
-                              disabled={employeeCurrentPage === 1}
-                              className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                            >
-                              Previous
-                            </button>
-                            
-                            {/* Page numbers */}
-                            <div className="flex items-center space-x-1">
-                              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                                let pageNum;
-                                if (totalPages <= 5) {
-                                  pageNum = i + 1;
-                                } else if (employeeCurrentPage <= 3) {
-                                  pageNum = i + 1;
-                                } else if (employeeCurrentPage >= totalPages - 2) {
-                                  pageNum = totalPages - 4 + i;
-                                } else {
-                                  pageNum = employeeCurrentPage - 2 + i;
-                                }
-                                
-                                return (
-                                  <button
-                                    key={pageNum}
-                                    onClick={() => setEmployeeCurrentPage(pageNum)}
-                                    className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                                      pageNum === employeeCurrentPage
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                    }`}
-                                  >
-                                    {pageNum}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            
-                            <button
-                              onClick={() => setEmployeeCurrentPage(employeeCurrentPage + 1)}
-                              disabled={employeeCurrentPage === totalPages}
-                              className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                            >
-                              Next
-                            </button>
-                          </div>
-                        )}
+                        {/* Per page selector */}
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Show:</span>
+                          <select
+                            value={employeesPerPage}
+                            onChange={(e) => setEmployeesPerPage(Number(e.target.value))}
+                            className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value={6}>6</option>
+                            <option value={9}>9</option>
+                            <option value={12}>12</option>
+                            <option value={18}>18</option>
+                            <option value={24}>24</option>
+                          </select>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">per page</span>
+                        </div>
                       </div>
+                      
+                      {totalPages > 1 && (
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => setEmployeeCurrentPage(employeeCurrentPage - 1)}
+                            disabled={employeeCurrentPage === 1}
+                            className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                          >
+                            Previous
+                          </button>
+                          
+                          {/* Page numbers */}
+                          <div className="flex items-center space-x-1">
+                            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                              let pageNum;
+                              if (totalPages <= 5) {
+                                pageNum = i + 1;
+                              } else if (employeeCurrentPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (employeeCurrentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                              } else {
+                                pageNum = employeeCurrentPage - 2 + i;
+                              }
+                              
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => setEmployeeCurrentPage(pageNum)}
+                                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                                    pageNum === employeeCurrentPage
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          
+                          <button
+                            onClick={() => setEmployeeCurrentPage(employeeCurrentPage + 1)}
+                            disabled={employeeCurrentPage === totalPages}
+                            className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
-              {/* Sidebar */}
-              <div className="space-y-6">
+              {/* Analytics Grid - Below Employee Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Compliance Overview Panel */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
                   <div className="flex items-center justify-between mb-4">
@@ -496,75 +493,6 @@ function App() {
                           })}
                         </div>
                       </div>
-                      
-                      {/* Review Status */}
-                      <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
-                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Review Status</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Up to Date</span>
-                            <span className="text-green-600 dark:text-green-400 font-medium">
-                              {employees.filter(emp => emp.reviewStatus === 'up_to_date').length}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Due Soon</span>
-                            <span className="text-yellow-600 dark:text-yellow-400 font-medium">
-                              {employees.filter(emp => emp.reviewStatus === 'due_soon').length}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Overdue</span>
-                            <span className="text-red-600 dark:text-red-400 font-medium">
-                              {employees.filter(emp => emp.reviewStatus === 'overdue').length}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Retention Status */}
-                      <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
-                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Retention Status</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Compliant</span>
-                            <span className="text-green-600 dark:text-green-400 font-medium">
-                              {employees.filter(emp => emp.retentionStatus === 'compliant').length}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Due Soon</span>
-                            <span className="text-yellow-600 dark:text-yellow-400 font-medium">
-                              {employees.filter(emp => emp.retentionStatus === 'due_soon').length}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Overdue</span>
-                            <span className="text-red-600 dark:text-red-400 font-medium">
-                              {employees.filter(emp => emp.retentionStatus === 'overdue').length}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Compliance Profiles */}
-                      <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
-                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Profile Assignment</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Assigned</span>
-                            <span className="text-blue-600 dark:text-blue-400 font-medium">
-                              {employees.filter(emp => emp.complianceProfile && emp.complianceProfile.trim() !== '').length}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-600 dark:text-gray-400">Unassigned</span>
-                            <span className="text-gray-600 dark:text-gray-400 font-medium">
-                              {employees.filter(emp => !emp.complianceProfile || emp.complianceProfile.trim() === '').length}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
                     </div>
                   ) : (
                     <div className="text-center py-4">
@@ -575,7 +503,6 @@ function App() {
                 
                 <NetworkAnalysis />
                 <EmailAnalytics />
-                <RecentActivity />
               </div>
             </div>
 

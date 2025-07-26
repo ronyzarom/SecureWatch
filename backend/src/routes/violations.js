@@ -102,9 +102,15 @@ router.get('/', async (req, res) => {
         e.name as employee_name,
         e.email as employee_email,
         e.department as employee_department,
-        e.photo_url as employee_photo
+        e.photo_url as employee_photo,
+        ec.id as related_email_id,
+        ec.subject as related_email_subject,
+        ec.sender_email as related_email_sender,
+        ec.sent_at as related_email_sent_at,
+        ec.risk_score as related_email_risk_score
       FROM violations v
       LEFT JOIN employees e ON v.employee_id = e.id
+      LEFT JOIN email_communications ec ON ec.message_id = (v.metadata->>'emailId')
       ${whereClause}
       ORDER BY v.${sortBy} ${sortOrder.toUpperCase()}
       LIMIT $${paramIndex++} OFFSET $${paramIndex++}
@@ -150,7 +156,14 @@ router.get('/', async (req, res) => {
           email: row.employee_email,
           department: row.employee_department,
           photo: row.employee_photo
-        }
+        },
+        relatedEmail: row.related_email_id ? {
+          id: row.related_email_id,
+          subject: row.related_email_subject,
+          sender: row.related_email_sender,
+          sentAt: row.related_email_sent_at,
+          riskScore: row.related_email_risk_score
+        } : null
       })),
       pagination: {
         page: parseInt(page),
@@ -291,9 +304,17 @@ router.get('/:id', async (req, res) => {
         e.email as employee_email,
         e.department as employee_department,
         e.photo_url as employee_photo,
-        e.job_title as employee_job_title
+        e.job_title as employee_job_title,
+        ec.id as related_email_id,
+        ec.subject as related_email_subject,
+        ec.sender_email as related_email_sender,
+        ec.recipients as related_email_recipients,
+        ec.sent_at as related_email_sent_at,
+        ec.risk_score as related_email_risk_score,
+        ec.body_text as related_email_body
       FROM violations v
       LEFT JOIN employees e ON v.employee_id = e.id
+      LEFT JOIN email_communications ec ON ec.message_id = (v.metadata->>'emailId')
       WHERE v.id = $1
     `;
 
@@ -356,7 +377,16 @@ router.get('/:id', async (req, res) => {
           department: violation.employee_department,
           jobTitle: violation.employee_job_title,
           photo: violation.employee_photo
-        }
+        },
+        relatedEmail: violation.related_email_id ? {
+          id: violation.related_email_id,
+          subject: violation.related_email_subject,
+          sender: violation.related_email_sender,
+          recipients: violation.related_email_recipients,
+          sentAt: violation.related_email_sent_at,
+          riskScore: violation.related_email_risk_score,
+          bodyPreview: violation.related_email_body ? violation.related_email_body.substring(0, 200) + '...' : null
+        } : null
       },
       statusHistory: historyResult.rows.map(row => ({
         id: row.id,

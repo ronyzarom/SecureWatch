@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { query } = require('../utils/database');
 
 /**
  * Optimized Email Risk & Compliance Analyzer

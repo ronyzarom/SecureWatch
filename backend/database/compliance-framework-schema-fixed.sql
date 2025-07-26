@@ -97,13 +97,32 @@ ALTER TABLE employees ADD COLUMN IF NOT EXISTS regulatory_status JSONB DEFAULT '
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_compliance_review DATE;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS compliance_exceptions JSONB DEFAULT '{}';
 
--- Extend violations table with compliance context
+-- Extend violations table with compliance information
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS compliance_category VARCHAR(50);
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS regulatory_impact JSONB DEFAULT '{}';
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS policy_references TEXT[] DEFAULT '{}';
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS compliance_severity VARCHAR(20);
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS requires_notification BOOLEAN DEFAULT false;
 ALTER TABLE violations ADD COLUMN IF NOT EXISTS notification_timeline_hours INTEGER;
+
+-- Add compliance-specific fields to violations table
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS regulation_id INTEGER REFERENCES compliance_regulations(id);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS policy_id INTEGER REFERENCES internal_policies(id);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS incident_type VARCHAR(50);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS impact_assessment TEXT;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS must_notify_by TIMESTAMP;
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS assigned_to INTEGER REFERENCES users(id);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS escalated_to INTEGER REFERENCES users(id);
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS discovered_at TIMESTAMP DEFAULT NOW();
+
+-- Update violations table status to include compliance workflow
+-- Note: This will extend existing status enum to include compliance states
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS workflow_status VARCHAR(20) DEFAULT 'open' 
+  CHECK (workflow_status IN ('open', 'investigating', 'resolved', 'closed', 'false_positive'));
+
+-- Add source tracking to distinguish violation types
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'email_analysis';
+ALTER TABLE violations ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
 
 -- Extend security_policies table with compliance mapping
 ALTER TABLE security_policies ADD COLUMN IF NOT EXISTS compliance_mapping JSONB DEFAULT '{}';
@@ -138,43 +157,32 @@ CREATE TABLE IF NOT EXISTS compliance_audit_log (
     user_agent TEXT
 );
 
--- Table for compliance violations and remediation tracking
-CREATE TABLE IF NOT EXISTS compliance_incidents (
-    id SERIAL PRIMARY KEY,
-    incident_type VARCHAR(50) NOT NULL, -- 'data_breach', 'policy_violation', 'retention_overdue'
-    severity VARCHAR(20) NOT NULL, -- 'low', 'medium', 'high', 'critical'
-    status VARCHAR(20) DEFAULT 'open', -- 'open', 'investigating', 'resolved', 'closed'
-    
-    -- Related entities
-    employee_id INTEGER REFERENCES employees(id),
-    violation_id INTEGER REFERENCES violations(id),
-    regulation_id INTEGER REFERENCES compliance_regulations(id),
-    policy_id INTEGER REFERENCES internal_policies(id),
-    
-    -- Incident details
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    impact_assessment TEXT,
-    remediation_plan TEXT,
-    
-    -- Timeline
-    discovered_at TIMESTAMP DEFAULT NOW(),
-    must_notify_by TIMESTAMP,
-    resolved_at TIMESTAMP,
-    
-    -- Assignment
-    assigned_to INTEGER REFERENCES users(id),
-    escalated_to INTEGER REFERENCES users(id),
-    
-    -- Metadata
-    created_by INTEGER REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    -- Constraints
-    CONSTRAINT valid_incident_severity CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-    CONSTRAINT valid_incident_status CHECK (status IN ('open', 'investigating', 'resolved', 'closed'))
-);
+-- Create view for compliance incidents (backward compatibility)
+CREATE OR REPLACE VIEW compliance_incidents AS
+SELECT 
+  id,
+  incident_type,
+  severity,
+  workflow_status as status,
+  employee_id,
+  id as violation_id, -- Self-reference since violation IS the incident
+  regulation_id,
+  policy_id,
+  type as title,
+  description,
+  impact_assessment,
+  discovered_at,
+  must_notify_by,
+  resolved_at,
+  assigned_to,
+  escalated_to,
+  created_at,
+  updated_at
+FROM violations 
+WHERE source IN ('compliance_analysis', 'regulatory_compliance_analysis', 'policy_compliance_analysis', 'email_security_violation')
+   OR compliance_category IS NOT NULL
+   OR regulation_id IS NOT NULL 
+   OR policy_id IS NOT NULL;
 
 -- ========================================
 -- INDEXES FOR PERFORMANCE

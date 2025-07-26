@@ -261,10 +261,9 @@ router.get('/', async (req, res) => {
 
     res.json({
       employees: employeesResult.rows.map(row => {
-        // Calculate compliance status based on available data
-        const complianceStatus = row.compliance_profile_id 
-          ? (row.risk_level === 'Critical' || row.risk_level === 'High' ? 'needs_review' : 'compliant')
-          : 'non_compliant';
+        // Calculate compliance status based on actual violations (not profile assignment)
+        const activeViolations = parseInt(row.active_violations) || 0;
+        const complianceStatus = activeViolations === 0 ? 'compliant' : 'non_compliant';
         
         // Calculate review status based on last compliance review
         let reviewStatus = 'never_reviewed';
@@ -279,6 +278,9 @@ router.get('/', async (req, res) => {
           } else {
             reviewStatus = 'overdue';
           }
+        } else {
+          // Employees who have never been reviewed should be considered "due" for initial review
+          reviewStatus = 'overdue';
         }
         
         // Calculate retention status

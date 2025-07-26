@@ -362,8 +362,9 @@ class TeamsConnector {
         const violationResult = await query(`
           INSERT INTO violations (
             employee_id, type, severity, description, 
-            source, metadata, status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            source, metadata, status, workflow_status, discovered_at,
+            incident_type, requires_notification
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           RETURNING id
         `, [
           employeeId,
@@ -381,7 +382,11 @@ class TeamsConnector {
             riskScore: riskAnalysis.riskScore,
             riskFactors: riskAnalysis.riskFactors || []
           }),
-          'Active'
+          'Active',
+          'open',
+          new Date(),
+          'teams_security_violation',
+          riskAnalysis.riskScore >= 90
         ]);
 
         const violationId = violationResult.rows[0].id;

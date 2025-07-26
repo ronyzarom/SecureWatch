@@ -907,7 +907,7 @@ router.get('/incidents', async (req, res) => {
     const { status, severity, employee_id } = req.query;
     
     let query = `
-      SELECT * FROM compliance_incidents_dashboard
+      SELECT * FROM compliance_incidents
       WHERE 1=1
     `;
     const params = [];
@@ -969,14 +969,16 @@ router.post('/incidents', async (req, res) => {
     }
 
     const result = await pool.query(`
-      INSERT INTO compliance_incidents (
-        incident_type, severity, title, description, employee_id, violation_id,
-        regulation_id, policy_id, impact_assessment, must_notify_by, assigned_to, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING id, incident_type, severity, title, status
+      INSERT INTO violations (
+        employee_id, type, severity, description, source, incident_type,
+        regulation_id, policy_id, impact_assessment, must_notify_by, assigned_to,
+        workflow_status, discovered_at, metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING id, incident_type, severity, type as title, workflow_status as status
     `, [
-      incident_type, severity, title, description, employee_id, violation_id,
-      regulation_id, policy_id, impact_assessment, must_notify_by, assigned_to, req.user.id
+      employee_id, title, severity, description, 'manual_compliance_incident', incident_type,
+      regulation_id, policy_id, impact_assessment, must_notify_by, assigned_to,
+      'open', new Date(), JSON.stringify({ created_by: req.user.id, manual: true })
     ]);
 
     res.status(201).json({
@@ -1017,11 +1019,12 @@ router.get('/dashboard', async (req, res) => {
           COUNT(*) FILTER (WHERE data_retention_until < CURRENT_DATE) as retention_overdue
         FROM employees
       `),
+      // Use the compliance_incidents view which pulls from enhanced violations table
       pool.query(`
         SELECT 
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE status = 'open') as open,
-          COUNT(*) FILTER (WHERE severity = 'critical') as critical,
+          COUNT(*) FILTER (WHERE severity = 'Critical' OR severity = 'critical') as critical,
           COUNT(*) FILTER (WHERE must_notify_by < NOW() AND status != 'closed') as notification_overdue
         FROM compliance_incidents
       `)
@@ -1052,7 +1055,8 @@ router.get('/dashboard', async (req, res) => {
         notificationOverdue: parseInt(incidentsResult.rows[0].notification_overdue)
       },
       complianceScore: {
-        overall: 85, // TODO: Calculate based on actual compliance metrics
+        // Calculate real compliance score based on data
+        overall: calculateComplianceScore(employeesResult.rows[0], incidentsResult.rows[0]),
         trend: 'improving'
       }
     };
@@ -1063,6 +1067,27 @@ router.get('/dashboard', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch compliance dashboard data' });
   }
 });
+
+// Helper function to calculate real compliance score
+function calculateComplianceScore(employeeData, incidentData) {
+  const total = parseInt(employeeData.total);
+  const assigned = parseInt(employeeData.assigned_profile);
+  const neverReviewed = parseInt(employeeData.never_reviewed);
+  const openIncidents = parseInt(incidentData.open);
+  const criticalIncidents = parseInt(incidentData.critical);
+  
+  if (total === 0) return 85; // Default if no employees
+  
+  // Base score from employee compliance
+  const profileScore = total > 0 ? (assigned / total) * 40 : 0;
+  const reviewScore = total > 0 ? ((total - neverReviewed) / total) * 30 : 0;
+  
+  // Deduct points for incidents
+  const incidentPenalty = Math.min(criticalIncidents * 10 + openIncidents * 2, 30);
+  
+  const score = Math.round(profileScore + reviewScore + 30 - incidentPenalty);
+  return Math.max(0, Math.min(100, score));
+}
 
 /**
  * =================================

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, AlertTriangle, Shield, TrendingUp, Clock } from 'lucide-react';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { NotificationProvider } from './contexts/NotificationContext';
+import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { MetricsCard } from './components/MetricsCard';
@@ -29,11 +29,13 @@ import { sortEmployeesByRisk } from './utils/riskUtils';
 import { Employee } from './types';
 import ErrorBoundary from './components/ErrorBoundary';
 import { logError } from './utils/errorUtils';
-import { testConnection, testAuth, dashboardAPI, employeeAPI } from './services/api';
+import { testConnection, testAuth, dashboardAPI, employeeAPI, setAutoLogoutHandler, authAPI } from './services/api';
 import { LoginPage } from './components/LoginPage';
 import api from './services/api';
 
-function App() {
+// Inner app component that has access to notification context
+function AppContent() {
+  const { addToast } = useNotifications();
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [viewMode, setViewMode] = useState<'all' | 'high-risk'>('high-risk');
 
@@ -59,6 +61,9 @@ function App() {
 
   // Check authentication and test API connection on app load
   useEffect(() => {
+    // Register auto-logout handler for session expiration
+    setAutoLogoutHandler(handleAutoLogout);
+    
     const initializeApp = async () => {
       console.log('🔗 Testing backend connection...');
       
@@ -92,6 +97,36 @@ function App() {
     initializeApp();
   }, []);
 
+  // Handle automatic logout when session expires
+  const handleAutoLogout = async () => {
+    console.log('🔒 Session expired - performing automatic logout');
+    
+    try {
+      // Try to call logout endpoint to clean up server-side session
+      await authAPI.logout();
+    } catch (error) {
+      // Ignore errors during logout (session might already be invalid)
+      console.log('ℹ️ Logout cleanup failed (session might already be expired)');
+    }
+    
+    // Show user-friendly notification
+    addToast({
+      type: 'warning',
+      title: 'Session Expired',
+      message: 'Your session has expired. Please log in again to continue.',
+      duration: 5000
+    });
+    
+    // Clear client-side state
+    setUser(null);
+    setIsAuthenticated(false);
+    setDashboardData(null);
+    setEmployees([]);
+    setCurrentPage('dashboard');
+    
+    console.log('🔄 Redirected to login due to session expiration');
+  };
+
   // Handle successful login
   const handleLoginSuccess = (userData: any) => {
     setUser(userData);
@@ -99,20 +134,23 @@ function App() {
     console.log('🎉 Login successful, user authenticated:', userData);
   };
 
-  // Handle logout
+  // Handle manual logout
   const handleLogout = async () => {
+    console.log('🔒 User initiated logout');
+    
     try {
-      await api.post('/api/auth/logout');
+      await authAPI.logout();
       console.log('✅ Logout successful');
     } catch (error) {
-      console.error('❌ Logout error:', error);
-    } finally {
-      setUser(null);
-      setIsAuthenticated(false);
-      // Clear data on logout
-      setDashboardData(null);
-      setEmployees([]);
+      console.error('⚠️ Logout error:', error);
     }
+    
+    // Clear client-side state
+    setUser(null);
+    setIsAuthenticated(false);
+    setDashboardData(null);
+    setEmployees([]);
+    setCurrentPage('dashboard');
   };
 
   // Fetch dashboard and employee data
@@ -535,9 +573,8 @@ function App() {
   if (!isAuthenticated) {
     return (
       <ErrorBoundary onError={handleGlobalError}>
-        <ThemeProvider>
-          <LoginPage onLoginSuccess={handleLoginSuccess} />
-        </ThemeProvider>
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+        <ToastContainer />
       </ErrorBoundary>
     );
   }
@@ -545,9 +582,7 @@ function App() {
   // Show main app if authenticated
   return (
     <ErrorBoundary onError={handleGlobalError}>
-      <ThemeProvider>
-        <NotificationProvider>
-          <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
+      <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
             {/* Mobile sidebar overlay */}
             {mobileSidebarOpen && (
               <div 
@@ -608,9 +643,18 @@ function App() {
             {/* Toast Notifications */}
             <ToastContainer />
           </div>
-        </NotificationProvider>
-      </ThemeProvider>
     </ErrorBoundary>
+  );
+}
+
+// Main App wrapper component
+function App() {
+  return (
+    <ThemeProvider>
+      <NotificationProvider>
+        <AppContent />
+      </NotificationProvider>
+    </ThemeProvider>
   );
 }
 

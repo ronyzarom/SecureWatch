@@ -274,7 +274,8 @@ class OptimizedEmailProcessor {
         `Security analysis detected: ${emailData.subject}`,
         'optimized_security_analysis',
         JSON.stringify({
-          emailId: emailData.messageId,
+          email_id: emailData.emailDatabaseId, // Use database ID for consistent linking
+          emailId: emailData.messageId, // Keep message ID for backward compatibility
           securityRiskScore: analysis.securityRiskScore || analysis.riskScore,
           riskFactors: analysis.riskFactors,
           detectionMethod: analysis.method,
@@ -301,12 +302,32 @@ class OptimizedEmailProcessor {
    */
   async createComplianceViolation(emailData, violation, analysis, employeeId) {
     try {
+      // Get regulation ID if we can find it
+      let regulationId = null;
+      if (violation.type && typeof violation.type === 'string') {
+        const regulationResult = await query(`
+          SELECT id FROM compliance_regulations 
+          WHERE regulation_code = $1 AND is_active = true
+        `, [violation.type.toLowerCase()]);
+        
+        if (regulationResult.rows.length > 0) {
+          regulationId = regulationResult.rows[0].id;
+        }
+      }
+
+      // Calculate notification timeline
+      const notificationHours = this.getNotificationTimeline(violation.type, violation.severity);
+      const mustNotifyBy = notificationHours ? 
+        new Date(Date.now() + (notificationHours * 60 * 60 * 1000)) : null;
+65 
       const violationResult = await query(`
         INSERT INTO violations (
-          employee_id, type, severity, description,
-          source, metadata, status, compliance_category,
-          regulatory_impact, policy_references
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          employee_id, type, severity, description, source, metadata, status,
+          compliance_category, regulatory_impact, policy_references,
+          regulation_id, incident_type, impact_assessment, must_notify_by,
+          workflow_status, requires_notification, notification_timeline_hours,
+          discovered_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         RETURNING id
       `, [
         employeeId,
@@ -315,9 +336,10 @@ class OptimizedEmailProcessor {
         violation.description,
         'compliance_analysis',
         JSON.stringify({
-          emailId: emailData.messageId,
+          email_id: emailData.emailDatabaseId, // Use database ID for consistent linking
+          emailId: emailData.messageId, // Keep message ID for backward compatibility
           complianceRiskScore: analysis.complianceRiskScore,
-          riskScore: analysis.complianceRiskScore, // Alias for UI compatibility
+          riskScore: analysis.complianceRiskScore,
           category: violation.category,
           violationCategory: violation.category,
           emailSubject: emailData.subject || emailData.subjectText || '',
@@ -338,7 +360,15 @@ class OptimizedEmailProcessor {
           requiresNotification: violation.severity === 'Critical'
         }),
         violation.article || violation.requirement || violation.section ? 
-          [violation.article || violation.requirement || violation.section] : []
+          [violation.article || violation.requirement || violation.section] : [],
+        regulationId,
+        'email_compliance_violation',
+        `Compliance risk score: ${analysis.complianceRiskScore || 0}%. Detection method: ${analysis.method || 'automated'}`,
+        mustNotifyBy,
+        'open',
+        violation.severity === 'Critical',
+        notificationHours,
+        new Date()
       ]);
 
       const violationId = violationResult.rows[0].id;
@@ -358,12 +388,31 @@ class OptimizedEmailProcessor {
    */
   async createRegulatoryViolation(emailData, violation, finding, analysis, employeeId) {
     try {
+      // Get regulation ID 
+      let regulationId = null;
+      if (finding.regulationCode) {
+        const regulationResult = await query(`
+          SELECT id FROM compliance_regulations 
+          WHERE regulation_code = $1 AND is_active = true
+        `, [finding.regulationCode.toLowerCase()]);
+        
+        if (regulationResult.rows.length > 0) {
+          regulationId = regulationResult.rows[0].id;
+        }
+      }
+
+      // Calculate notification timeline
+      const notificationHours = this.getNotificationTimeline(finding.regulationCode, violation.severity);
+      const mustNotifyBy = notificationHours ? 
+        new Date(Date.now() + (notificationHours * 60 * 60 * 1000)) : null;
+
       const violationResult = await query(`
         INSERT INTO violations (
-          employee_id, type, severity, description,
-          source, metadata, status, compliance_category,
-          regulatory_impact, requires_notification, notification_timeline_hours
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          employee_id, type, severity, description, source, metadata, status,
+          compliance_category, regulatory_impact, requires_notification,
+          notification_timeline_hours, regulation_id, incident_type,
+          impact_assessment, must_notify_by, workflow_status, discovered_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING id
       `, [
         employeeId,
@@ -372,7 +421,8 @@ class OptimizedEmailProcessor {
         violation.description,
         'regulatory_compliance_analysis',
         JSON.stringify({
-          emailId: emailData.messageId,
+          email_id: emailData.emailDatabaseId, // Use database ID for consistent linking
+          emailId: emailData.messageId, // Keep message ID for backward compatibility
           regulationCode: finding.regulationCode,
           riskScore: finding.riskScore,
           article: violation.article,
@@ -390,7 +440,13 @@ class OptimizedEmailProcessor {
           complianceFramework: finding.regulationCode.toUpperCase()
         }),
         violation.severity === 'Critical',
-        this.getNotificationTimeline(finding.regulationCode, violation.severity)
+        notificationHours,
+        regulationId,
+        'regulatory_compliance_violation',
+        `Risk score: ${finding.riskScore}%. Regulation: ${finding.regulationCode.toUpperCase()}. Detection: ${analysis.method || 'automated'}`,
+        mustNotifyBy,
+        'open',
+        new Date()
       ]);
 
       const violationId = violationResult.rows[0].id;
@@ -414,8 +470,9 @@ class OptimizedEmailProcessor {
         INSERT INTO violations (
           employee_id, type, severity, description,
           source, metadata, status, compliance_category,
-          policy_references
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          policy_references, workflow_status, discovered_at,
+          incident_type, requires_notification, policy_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING id
       `, [
         employeeId,
@@ -424,7 +481,8 @@ class OptimizedEmailProcessor {
         violation.description,
         'policy_compliance_analysis',
         JSON.stringify({
-          emailId: emailData.messageId,
+          email_id: emailData.emailDatabaseId, // Use database ID for consistent linking
+          emailId: emailData.messageId, // Keep message ID for backward compatibility
           policyCode: policyViolation.policyCode,
           riskScore: policyViolation.riskScore,
           policySection: violation.policySection,
@@ -433,7 +491,12 @@ class OptimizedEmailProcessor {
         }),
         'Active',
         violation.category,
-        [policyViolation.policyCode]
+        [policyViolation.policyCode],
+        'open',
+        new Date(),
+        'policy_compliance_violation',
+        violation.severity === 'Critical',
+        null // policy_id - would need to be looked up if we have the policy table
       ]);
 
       const violationId = violationResult.rows[0].id;

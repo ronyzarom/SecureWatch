@@ -8,7 +8,11 @@ import {
   AlertTriangle,
   Calendar,
   Eye,
-  BarChart3
+  BarChart3,
+  Info,
+  ArrowRight,
+  Mail,
+  GraduationCap
 } from 'lucide-react';
 import { ComplianceDashboard } from '../components/ComplianceDashboard';
 import { RegulationsManagement } from '../components/compliance/RegulationsManagement';
@@ -30,52 +34,77 @@ const tabs: TabConfig[] = [
     id: 'dashboard',
     label: 'Dashboard',
     icon: BarChart3,
-    description: 'Compliance overview and metrics'
+    description: 'Monitor your organization\'s overall compliance status with real-time metrics, incident tracking, and employee compliance health.'
   },
   {
     id: 'regulations',
     label: 'Regulations',
     icon: BookOpen,
-    description: 'Manage regulatory frameworks'
+    description: 'Enable and configure which external regulations apply to your organization. This drives automatic email monitoring and compliance analysis.'
   },
   {
     id: 'policies',
     label: 'Internal Policies',
     icon: FileText,
-    description: 'Organizational policy management'
+    description: 'Create and manage organizational policies that work alongside regulations to provide comprehensive compliance coverage.'
   },
   {
     id: 'profiles',
     label: 'Compliance Profiles',
     icon: Shield,
-    description: 'Employee compliance classifications'
+    description: 'Define different compliance requirements for different types of employees based on their role, department, and data access needs.'
   },
   {
     id: 'audit',
     label: 'Audit Trail',
     icon: Eye,
-    description: 'Compliance activity history'
+    description: 'Maintain comprehensive audit logs of all compliance-related changes and activities for regulatory inspections and accountability.'
   }
 ];
 
 const CompliancePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
 
+  const getCurrentTabDescription = () => {
+    return tabs.find(tab => tab.id === activeTab)?.description || '';
+  };
+
   const renderTabContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <ComplianceDashboard />;
-      case 'regulations':
-        return <RegulationsManagement />;
-      case 'policies':
-        return <PoliciesManagement />;
-      case 'profiles':
-        return <ProfilesManagement />;
-      case 'audit':
-        return <AuditTrail />;
-      default:
-        return <ComplianceDashboard />;
-    }
+    const currentDescription = getCurrentTabDescription();
+    
+    return (
+      <div>
+        {/* Tab Description */}
+        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-6 border border-blue-200 dark:border-blue-800">
+          <div className="flex items-start">
+            <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              {currentDescription}
+            </p>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        <div>
+          {(() => {
+            switch (activeTab) {
+              case 'dashboard':
+                return <ComplianceDashboard />;
+              case 'regulations':
+                return <RegulationsManagement />;
+              case 'policies':
+                return <PoliciesManagement />;
+              case 'profiles':
+                return <ProfilesManagement />;
+              case 'audit':
+                return <AuditTrail />;
+              default:
+                return <ComplianceDashboard />;
+            }
+          })()}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -88,8 +117,36 @@ const CompliancePage: React.FC = () => {
             Compliance Management
           </h1>
           <p className="text-gray-600 dark:text-gray-300 mt-2">
-            Comprehensive compliance framework for regulatory adherence and risk management
+            Configure regulations and policies to automatically monitor communications and assign training
           </p>
+          
+          {/* Simple Workflow Overview */}
+          <div className="mt-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+            <div className="flex items-center text-sm text-blue-800 dark:text-blue-200">
+              <Info className="w-4 h-4 mr-2 flex-shrink-0" />
+              <div className="flex items-center space-x-2 overflow-x-auto">
+                <span className="flex items-center whitespace-nowrap">
+                  <BookOpen className="w-4 h-4 mr-1" />
+                  Configure Regulations
+                </span>
+                <ArrowRight className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span className="flex items-center whitespace-nowrap">
+                  <Shield className="w-4 h-4 mr-1" />
+                  Assign Profiles
+                </span>
+                <ArrowRight className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span className="flex items-center whitespace-nowrap">
+                  <Mail className="w-4 h-4 mr-1" />
+                  Monitor Communications
+                </span>
+                <ArrowRight className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span className="flex items-center whitespace-nowrap">
+                  <GraduationCap className="w-4 h-4 mr-1" />
+                  Auto-Assign Training
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Navigation Tabs */}

@@ -21,29 +21,52 @@ import { ErrorMessage, ErrorCard } from '../components/ErrorMessage';
 import { AppError, ErrorType, createError, withErrorHandling, logError } from '../utils/errorUtils';
 import { employeeAPI } from '../services/api';
 
+interface Employee {
+  id: number;
+  name: string;
+  email: string;
+  department: string;
+  riskScore: number;
+  riskLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  lastActivity: string;
+  photo?: string;
+  violationCount: number;
+}
+
+interface PaginationData {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
 export const EmployeesPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [pagination, setPagination] = useState<PaginationData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<AppError | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [riskFilter, setRiskFilter] = useState<string>('all');
-  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
-  
+  const [selectedDepartment, setSelectedDepartment] = useState('all');
+  const [selectedRiskLevel, setSelectedRiskLevel] = useState('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [showFilters, setShowFilters] = useState(false);
+  const [sortBy, setSortBy] = useState<string>('riskScore');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
   // Compliance-specific filters
   const [complianceStatusFilter, setComplianceStatusFilter] = useState<string>('all');
   const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all');
   const [retentionStatusFilter, setRetentionStatusFilter] = useState<string>('all');
   const [complianceProfileFilter, setComplianceProfileFilter] = useState<string>('all');
   
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AppError | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
-  const [sortBy, setSortBy] = useState<'riskScore' | 'name' | 'department' | 'lastActivity'>('riskScore');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
+  
   // Fetch employees from API
   const fetchEmployees = async () => {
     setLoading(true);
@@ -61,16 +84,19 @@ export const EmployeesPage: React.FC = () => {
         throw fetchError;
       }
 
-      // Use employee data directly from API (consistent with dashboard)
+      // Use employee data and pagination from API response
       const employeesData = data?.employees || data || [];
+      const paginationData = data?.pagination || null;
       
       console.log('✅ EmployeesPage: Employees data:', employeesData);
+      console.log('✅ EmployeesPage: Pagination data:', paginationData);
       console.log('🔍 EmployeesPage Employee data:');
       employeesData.forEach((emp: any) => {
         console.log(`- ${emp.name}: ${emp.riskScore}% (${emp.riskLevel}) | Dept: ${emp.department}`);
       });
       
       setEmployees(employeesData);
+      setPagination(paginationData);
       
     } catch (error) {
       const appError = error instanceof Error 
@@ -107,8 +133,8 @@ export const EmployeesPage: React.FC = () => {
                          email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          department.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          role.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRisk = riskFilter === 'all' || riskLevel === riskFilter;
-    const matchesDepartment = departmentFilter === 'all' || department === departmentFilter;
+    const matchesRisk = selectedRiskLevel === 'all' || riskLevel === selectedRiskLevel;
+    const matchesDepartment = selectedDepartment === 'all' || department === selectedDepartment;
     
     // Compliance-specific filters
     const matchesComplianceStatus = complianceStatusFilter === 'all' || complianceStatus === complianceStatusFilter;
@@ -153,8 +179,8 @@ export const EmployeesPage: React.FC = () => {
   });
 
   // Pagination logic
-  const totalEmployees = sortedEmployees.length;
-  const totalPages = Math.ceil(totalEmployees / itemsPerPage);
+  const totalEmployees = pagination?.total || 0;
+  const totalPages = pagination?.totalPages || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedEmployees = sortedEmployees.slice(startIndex, endIndex);
@@ -162,14 +188,14 @@ export const EmployeesPage: React.FC = () => {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, riskFilter, departmentFilter, complianceStatusFilter, reviewStatusFilter, retentionStatusFilter, complianceProfileFilter, sortBy, sortOrder, itemsPerPage]);
+  }, [searchTerm, selectedRiskLevel, selectedDepartment, complianceStatusFilter, reviewStatusFilter, retentionStatusFilter, complianceProfileFilter, sortBy, sortOrder, itemsPerPage]);
   const departments = [...new Set(employees.map(emp => emp.department).filter(Boolean))];
 
   // Helper functions
   const clearFilters = () => {
     setSearchTerm('');
-    setRiskFilter('all');
-    setDepartmentFilter('all');
+    setSelectedRiskLevel('all');
+    setSelectedDepartment('all');
     setComplianceStatusFilter('all');
     setReviewStatusFilter('all');
     setRetentionStatusFilter('all');
@@ -177,9 +203,13 @@ export const EmployeesPage: React.FC = () => {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = searchTerm || riskFilter !== 'all' || departmentFilter !== 'all' || 
+  const hasActiveFilters = searchTerm || selectedRiskLevel !== 'all' || selectedDepartment !== 'all' || 
                           complianceStatusFilter !== 'all' || reviewStatusFilter !== 'all' || 
                           retentionStatusFilter !== 'all' || complianceProfileFilter !== 'all';
+
+  const toggleFilters = () => {
+    setShowFilters(!showFilters);
+  };
 
   const getRiskStats = () => {
     const stats = employees.reduce((acc, emp) => {
@@ -291,7 +321,7 @@ export const EmployeesPage: React.FC = () => {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Total Employees</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{employees.length}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalEmployees}</p>
             </div>
           </div>
         </div>
@@ -359,8 +389,8 @@ export const EmployeesPage: React.FC = () => {
             
             <div className="flex flex-wrap gap-3">
               <select
-                value={riskFilter}
-                onChange={(e) => setRiskFilter(e.target.value)}
+                value={selectedRiskLevel}
+                onChange={(e) => setSelectedRiskLevel(e.target.value)}
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="all">All Risk Levels</option>
@@ -371,8 +401,8 @@ export const EmployeesPage: React.FC = () => {
               </select>
               
               <select
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="all">All Departments</option>

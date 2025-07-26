@@ -899,8 +899,9 @@ DO NOT use decimal numbers like 67.5 or 89.3. Use whole numbers only.`;
       const violationResult = await query(`
         INSERT INTO violations (
           employee_id, type, severity, description, 
-          source, metadata, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          source, metadata, status, workflow_status, discovered_at,
+          incident_type, requires_notification
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id
       `, [
         employeeId,
@@ -918,10 +919,13 @@ DO NOT use decimal numbers like 67.5 or 89.3. Use whole numbers only.`;
           reasoning: result.reasoning,
           detectedPatterns: result.detectedPatterns,
           triggersAlert: result.triggersAlert,
-          triggersInvestigation: result.triggersInvestigation,
           triggersCritical: result.triggersCritical
         }),
-        'Active'
+        'Active',
+        'open',
+        new Date(),
+        'category_detection_violation',
+        severity === 'Critical'
       ]);
 
       const violationId = violationResult.rows[0].id;

@@ -210,7 +210,7 @@ class Office365Connector {
   }
 
   /**
-   * Get emails for a specific user
+   * Get emails for a specific user from a specific folder
    */
   async getUserEmails(userId, options = {}) {
     if (!this.graphClient) {
@@ -222,12 +222,20 @@ class Office365Connector {
         top = 50,           // Number of emails to retrieve
         skip = 0,           // Number of emails to skip
         fromDate = null,    // Start date for email retrieval
-        toDate = null       // End date for email retrieval
+        toDate = null,      // End date for email retrieval
+        folder = 'inbox'    // 'inbox' or 'sentitems'
       } = options;
 
-      console.log(`📧 Fetching emails for user ${userId}...`);
+      console.log(`📧 Fetching emails for user ${userId} from ${folder}...`);
 
-      let apiUrl = `/users/${userId}/messages`;
+      // Determine API endpoint based on folder
+      let apiUrl;
+      if (folder === 'sentitems' || folder === 'sent') {
+        apiUrl = `/users/${userId}/mailFolders/sentitems/messages`;
+      } else {
+        apiUrl = `/users/${userId}/messages`;
+      }
+
       let filters = [];
 
       if (fromDate) {
@@ -250,11 +258,11 @@ class Office365Connector {
         .orderby('receivedDateTime desc')
         .get();
 
-      console.log(`✅ Retrieved ${emails.value.length} emails for user ${userId}`);
-      return emails.value;
+      console.log(`✅ Retrieved ${emails.value.length} emails for user ${userId} from ${folder}`);
+      return emails.value.map(email => ({ ...email, _folder: folder }));
 
     } catch (error) {
-      console.error(`❌ Error fetching emails for user ${userId}:`, error);
+      console.error(`❌ Error fetching emails for user ${userId} from ${folder}:`, error);
       throw error;
     }
   }
@@ -281,24 +289,46 @@ class Office365Connector {
   }
 
   /**
-   * Process and analyze a single email - OPTIMIZED VERSION
+   * Process and analyze a single email - ADVANCED VERSION with direction awareness
+   * Uses OptimizedEmailProcessor for automatic violation creation and policy evaluation
    */
-  async processEmail(email, user, userId) {
+  async processEmail(email, user, userId, messageType = 'received') {
     try {
-      // Extract email data
+      // Determine sender and recipients based on message direction
+      let senderEmail, senderName, recipients;
+      let messageDirection;
+      
+      if (messageType === 'sent') {
+        // For sent emails: user is sender, recipients are in TO field
+        senderEmail = user.mail;
+        senderName = user.displayName;
+        recipients = this.extractRecipients(email);
+        messageDirection = 'outbound';
+      } else {
+        // For received emails: sender is in FROM field, user is recipient
+        senderEmail = email.from?.emailAddress?.address || 'unknown@unknown.com';
+        senderName = email.from?.emailAddress?.name || 'Unknown';
+        recipients = [{ email: user.mail, name: user.displayName }];
+        messageDirection = 'inbound';
+      }
+
+      // Extract email data with direction awareness
       const emailData = {
         messageId: email.internetMessageId || email.id,
         subject: email.subject || '',
         bodyText: email.body?.content || email.bodyPreview || '',
         bodyHtml: email.body?.contentType === 'html' ? email.body.content : null,
         sender: {
-          email: email.from?.emailAddress?.address || user.mail,
-          name: email.from?.emailAddress?.name || user.displayName
+          email: senderEmail,
+          name: senderName
         },
-        recipients: this.extractRecipients(email),
+        recipients: recipients,
         sentAt: new Date(email.sentDateTime || email.receivedDateTime),
         hasAttachments: email.hasAttachments || false,
-        attachments: []
+        attachments: [],
+        messageType: messageType,
+        messageDirection: messageDirection,
+        userEmail: user.mail // Office365 account owner
       };
 
       // Get attachments if they exist
@@ -325,11 +355,12 @@ class Office365Connector {
       let employeeId = null;
       if (employeeResult.rows.length > 0) {
         employeeId = employeeResult.rows[0].id;
+        console.log(`👤 Found employee: ${employeeResult.rows[0].name} (${emailData.sender.email})`);
       } else {
         console.warn(`⚠️ Employee not found for email: ${emailData.sender.email}`);
       }
 
-      // 🚀 OPTIMIZED: Use the cost-effective optimized processor
+      // 🚀 ADVANCED: Use OptimizedEmailProcessor (same as Gmail) - handles all violation types automatically
       const result = await this.optimizedProcessor.processEmail(emailData, employeeId, 'office365');
 
       // Queue employee for AI compliance analysis (sync-triggered)
@@ -452,96 +483,25 @@ class Office365Connector {
       console.log(`✅ Stored email ${emailData.messageId} in database`);
 
     } catch (error) {
-      console.error(`❌ Error storing email in database:`, error);
+      console.error('❌ Error storing email in database:', error);
       throw error;
     }
   }
 
   /**
-   * Check for policy violations and create alerts
-   */
-  async checkForViolations(emailData, analysis, employeeId) {
-    try {
-      // Create violations for high-risk emails
-      if (analysis.riskScore >= 70) {
-        const violationType = this.determineViolationType(analysis);
-        
-        const violationResult = await query(`
-          INSERT INTO violations (
-            employee_id, type, severity, description, 
-            source, metadata, status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING id
-        `, [
-          employeeId,
-          violationType,
-          analysis.riskScore >= 90 ? 'Critical' :
-          analysis.riskScore >= 80 ? 'High' : 'Medium',
-          `Email violation detected: ${emailData.subject}`,
-          'email_analysis',
-          JSON.stringify({
-            emailId: emailData.messageId,
-            riskScore: analysis.riskScore,
-            riskFactors: analysis.riskFactors,
-            recipients: emailData.recipients.length
-          }),
-          'Active'
-        ]);
-
-        const violationId = violationResult.rows[0].id;
-        console.log(`🚨 Created violation ${violationId} for high-risk email: ${emailData.subject}`);
-
-        // 🆕 AUTO-TRIGGER ENHANCED POLICY EVALUATION
-        try {
-          const policyEvaluationEngine = require('./policyEvaluationEngine');
-          const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
-          if (policiesTriggered > 0) {
-            console.log(`🔥 Policy evaluation triggered ${policiesTriggered} policies for violation ${violationId}`);
-          } else {
-            console.log(`📋 No policies triggered for violation ${violationId} (employee ${employeeId})`);
-          }
-        } catch (policyError) {
-          console.error(`❌ Failed to evaluate policies for violation ${violationId}:`, policyError);
-          // Don't fail the entire process if policy evaluation fails
-        }
-      }
-
-    } catch (error) {
-      console.error(`❌ Error creating violation:`, error);
-    }
-  }
-
-  /**
-   * Determine violation type based on analysis
-   */
-  determineViolationType(analysis) {
-    const factors = analysis.riskFactors.join(' ').toLowerCase();
-    
-    if (factors.includes('data') || factors.includes('exfiltration')) {
-      return 'Data Exfiltration';
-    } else if (factors.includes('external') || factors.includes('unauthorized')) {
-      return 'Unauthorized Communication';
-    } else if (factors.includes('financial') || factors.includes('confidential')) {
-      return 'Information Disclosure';
-    } else if (factors.includes('policy') || factors.includes('violation')) {
-      return 'Policy Violation';
-    } else {
-      return 'Suspicious Activity';
-    }
-  }
-
-  /**
-   * Sync emails for all users
+   * Sync emails for all users - BOTH INBOX AND SENT (DEFAULT)
    */
   async syncAllUserEmails(options = {}) {
     try {
       const {
         daysBack = 7,       // How many days back to sync
         maxEmailsPerUser = 100,
-        batchSize = 10      // Process users in batches
+        batchSize = 10,     // Process users in batches
+        syncSentEmails = true
       } = options;
 
       console.log('🔄 Starting Office 365 email sync for all users...');
+      console.log(`📧 Syncing: ${syncSentEmails ? 'INBOX + SENT' : 'INBOX only'} emails`);
 
       // Get all users
       const users = await this.getAllUsers();
@@ -550,6 +510,8 @@ class Office365Connector {
         processedUsers: 0,
         totalEmails: 0,
         processedEmails: 0,
+        receivedEmails: 0,
+        sentEmails: 0,
         errors: [],
         violations: 0
       };
@@ -566,17 +528,36 @@ class Office365Connector {
           try {
             console.log(`👤 Processing emails for ${user.displayName} (${user.mail})`);
 
-            // Get user emails
-            const emails = await this.getUserEmails(user.id, {
-              top: maxEmailsPerUser,
-              fromDate: fromDate
+            // 📥 Get RECEIVED emails (inbox)
+            const inboxEmails = await this.getUserEmails(user.id, {
+              top: Math.floor(maxEmailsPerUser / (syncSentEmails ? 2 : 1)),
+              fromDate: fromDate,
+              folder: 'inbox'
             });
 
-            results.totalEmails += emails.length;
+            // 📤 Get SENT emails if enabled
+            let sentEmails = [];
+            if (syncSentEmails) {
+              sentEmails = await this.getUserEmails(user.id, {
+                top: Math.floor(maxEmailsPerUser / 2),
+                fromDate: fromDate,
+                folder: 'sentitems'
+              });
+            }
+
+            const allEmails = [...inboxEmails, ...sentEmails];
+            results.totalEmails += allEmails.length;
+            results.receivedEmails += inboxEmails.length;
+            results.sentEmails += sentEmails.length;
+
+            console.log(`📧 Found ${inboxEmails.length} inbox + ${sentEmails.length} sent = ${allEmails.length} total emails for ${user.mail}`);
 
             // Process each email
-            for (const email of emails) {
-              const result = await this.processEmail(email, user, user.id);
+            for (const email of allEmails) {
+              // Determine message type based on folder
+              const messageType = email._folder === 'sentitems' ? 'sent' : 'received';
+              
+              const result = await this.processEmail(email, user, user.id, messageType);
               
               if (result.success) {
                 results.processedEmails++;
@@ -593,7 +574,7 @@ class Office365Connector {
             }
 
             results.processedUsers++;
-            console.log(`✅ Completed ${user.displayName}: ${emails.length} emails processed`);
+            console.log(`✅ Completed ${user.displayName}: ${allEmails.length} emails processed (${inboxEmails.length} received, ${sentEmails.length} sent)`);
 
           } catch (userError) {
             console.error(`❌ Error processing user ${user.mail}:`, userError);

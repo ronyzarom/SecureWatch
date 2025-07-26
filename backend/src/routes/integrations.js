@@ -816,10 +816,6 @@ router.get('/teams/config', requireAdmin, async (req, res) => {
       SELECT value FROM app_settings WHERE key = 'office365_config'
     `);
 
-    const teamsResult = await query(`
-      SELECT * FROM teams_config WHERE tenant_id = 'default' LIMIT 1
-    `);
-
     if (office365Result.rows.length === 0) {
       return res.json({
         isConfigured: false,
@@ -830,18 +826,28 @@ router.get('/teams/config', requireAdmin, async (req, res) => {
     }
 
     const office365Config = office365Result.rows[0].value;
-    const teamsConfig = teamsResult.rows.length > 0 ? teamsResult.rows[0] : {
-      is_active: false,
-      sync_enabled: true,
-      sync_frequency_hours: 24,
-      max_messages_per_channel: 100,
-      days_back_to_sync: 7
+    
+    // Get Teams config from unified app_settings table
+    let teamsConfig = {
+      isActive: false,
+      syncEnabled: true,
+      syncFrequencyHours: 24,
+      maxMessagesPerChannel: 100,
+      daysBackToSync: 7
     };
+
+    const teamsResult = await query(`
+      SELECT value FROM app_settings WHERE key = 'teams_config'
+    `);
+    
+    if (teamsResult.rows.length > 0) {
+      teamsConfig = { ...teamsConfig, ...teamsResult.rows[0].value };
+    }
 
     // Determine status
     let status = 'disconnected';
     if (office365Config.isConfigured) {
-      if (teamsConfig.is_active) {
+      if (teamsConfig.isActive) {
         status = 'connected';
       } else {
         status = 'disabled';
@@ -852,13 +858,13 @@ router.get('/teams/config', requireAdmin, async (req, res) => {
 
     res.json({
       isConfigured: Boolean(office365Config.isConfigured),
-      isActive: Boolean(teamsConfig.is_active),
-      syncEnabled: Boolean(teamsConfig.sync_enabled),
-      syncFrequencyHours: teamsConfig.sync_frequency_hours,
-      maxMessagesPerChannel: teamsConfig.max_messages_per_channel,
-      daysBackToSync: teamsConfig.days_back_to_sync,
-      lastSync: teamsConfig.last_sync_at,
-      lastSyncStatus: teamsConfig.last_sync_status,
+      isActive: Boolean(teamsConfig.isActive),
+      syncEnabled: Boolean(teamsConfig.syncEnabled),
+      syncFrequencyHours: teamsConfig.syncFrequencyHours,
+      maxMessagesPerChannel: teamsConfig.maxMessagesPerChannel,
+      daysBackToSync: teamsConfig.daysBackToSync,
+      lastSync: teamsConfig.lastSync,
+      lastSyncStatus: teamsConfig.lastSyncStatus,
       status,
       // Include Office 365 auth info (without secrets)
       tenantId: office365Config.tenantId,
@@ -909,26 +915,24 @@ router.put('/teams/config', requireAdmin, async (req, res) => {
       });
     }
 
-    // Update Teams configuration
+    // Prepare Teams configuration object
+    const teamsConfig = {
+      isActive: Boolean(isActive),
+      syncEnabled: Boolean(syncEnabled),
+      syncFrequencyHours: parseInt(syncFrequencyHours) || 24,
+      maxMessagesPerChannel: parseInt(maxMessagesPerChannel) || 100,
+      daysBackToSync: parseInt(daysBackToSync) || 7,
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.id
+    };
+
+    // Save Teams configuration to unified app_settings table
     await query(`
-      INSERT INTO teams_config (
-        tenant_id, is_active, sync_enabled, sync_frequency_hours,
-        max_messages_per_channel, days_back_to_sync, updated_at
-      ) VALUES ('default', $1, $2, $3, $4, $5, NOW())
-      ON CONFLICT (tenant_id) DO UPDATE SET
-        is_active = EXCLUDED.is_active,
-        sync_enabled = EXCLUDED.sync_enabled,
-        sync_frequency_hours = EXCLUDED.sync_frequency_hours,
-        max_messages_per_channel = EXCLUDED.max_messages_per_channel,
-        days_back_to_sync = EXCLUDED.days_back_to_sync,
-        updated_at = NOW()
-    `, [
-      Boolean(isActive),
-      Boolean(syncEnabled),
-      parseInt(syncFrequencyHours) || 24,
-      parseInt(maxMessagesPerChannel) || 100,
-      parseInt(daysBackToSync) || 7
-    ]);
+      INSERT INTO app_settings (key, value, updated_at) 
+      VALUES ('teams_config', $1, NOW())
+      ON CONFLICT (key) 
+      DO UPDATE SET value = $1, updated_at = NOW()
+    `, [JSON.stringify(teamsConfig)]);
 
     res.json({
       success: true,
@@ -1021,15 +1025,24 @@ router.post('/teams/sync', requireAdmin, async (req, res) => {
   try {
     const { daysBack = 7, maxMessagesPerChannel = 100, batchSize = 5 } = req.body;
 
-    // Check Teams configuration
+    // Check Teams configuration from unified app_settings table
     const teamsConfigResult = await query(`
-      SELECT * FROM teams_config WHERE tenant_id = 'default' LIMIT 1
+      SELECT value FROM app_settings WHERE key = 'teams_config'
     `);
 
-    if (teamsConfigResult.rows.length === 0 || !teamsConfigResult.rows[0].is_active) {
+    if (teamsConfigResult.rows.length === 0) {
       return res.status(400).json({
-        error: 'Teams integration not active',
-        code: 'TEAMS_NOT_ACTIVE'
+        error: 'Teams integration not configured',
+        code: 'TEAMS_NOT_CONFIGURED'
+      });
+    }
+
+    const teamsConfig = teamsConfigResult.rows[0].value;
+
+    if (!teamsConfig.isActive) {
+      return res.status(400).json({
+        error: 'Teams integration is disabled',
+        code: 'TEAMS_DISABLED'
       });
     }
 
@@ -1057,13 +1070,15 @@ router.post('/teams/sync', requireAdmin, async (req, res) => {
     // Initialize connector
     await teamsConnector.initialize(config);
 
-    // Store sync job info
+    // Store sync job info in unified sync_jobs table
     const syncJobResult = await query(`
-      INSERT INTO teams_sync_jobs (
-        status, parameters, started_at, started_by
-      ) VALUES ('running', $1, NOW(), $2)
+      INSERT INTO sync_jobs (
+        integration_type, status, parameters, started_at, started_by
+      ) VALUES ($1, $2, $3, NOW(), $4)
       RETURNING id
     `, [
+      'teams',
+      'running',
       JSON.stringify({ daysBack, maxMessagesPerChannel, batchSize }),
       req.user.id
     ]);
@@ -1081,30 +1096,34 @@ router.post('/teams/sync', requireAdmin, async (req, res) => {
     syncPromise.then(async (result) => {
       try {
         await query(`
-          UPDATE teams_sync_jobs SET
-            status = 'completed',
-            completed_at = NOW(),
-            total_teams = $1,
-            total_messages = $2,
-            processed_messages = $3,
-            flagged_messages = $4
-          WHERE id = $5
+          UPDATE sync_jobs 
+          SET 
+            status = $1, 
+            completed_at = NOW(), 
+            results = $2
+          WHERE id = $3
         `, [
-          result.totalTeams,
-          result.totalMessages,
-          result.processedMessages,
-          result.flaggedMessages,
+          'completed', 
+          JSON.stringify(result), 
           syncJobId
         ]);
 
-        // Update Teams config with last sync info
-        await query(`
-          UPDATE teams_config SET
-            last_sync_at = NOW(),
-            last_sync_status = 'success',
-            last_sync_error = NULL
-          WHERE tenant_id = 'default'
-        `);
+        // Update Teams config with last sync info in unified app_settings
+        try {
+          const configResult = await query(`SELECT value FROM app_settings WHERE key = 'teams_config'`);
+          if (configResult.rows.length > 0) {
+            const config = { ...configResult.rows[0].value };
+            config.lastSync = new Date().toISOString();
+            config.lastSyncStatus = 'success';
+            config.lastSyncError = null;
+            
+            await query(`
+              UPDATE app_settings SET value = $1, updated_at = NOW() WHERE key = 'teams_config'
+            `, [JSON.stringify(config)]);
+          }
+        } catch (error) {
+          console.log('Failed to update Teams sync status:', error.message);
+        }
 
         console.log('✅ Teams sync job completed successfully:', result);
 
@@ -1114,21 +1133,30 @@ router.post('/teams/sync', requireAdmin, async (req, res) => {
     }).catch(async (error) => {
       try {
         await query(`
-          UPDATE teams_sync_jobs SET
-            status = 'failed',
-            completed_at = NOW(),
-            error_message = $1
-          WHERE id = $2
-        `, [error.message, syncJobId]);
+          UPDATE sync_jobs 
+          SET 
+            status = $1, 
+            completed_at = NOW(), 
+            error_message = $2
+          WHERE id = $3
+        `, ['failed', error.message, syncJobId]);
 
-        // Update Teams config with error info
-        await query(`
-          UPDATE teams_config SET
-            last_sync_at = NOW(),
-            last_sync_status = 'error',
-            last_sync_error = $1
-          WHERE tenant_id = 'default'
-        `, [error.message]);
+        // Update Teams config with error info in unified app_settings
+        try {
+          const configResult = await query(`SELECT value FROM app_settings WHERE key = 'teams_config'`);
+          if (configResult.rows.length > 0) {
+            const config = { ...configResult.rows[0].value };
+            config.lastSync = new Date().toISOString();
+            config.lastSyncStatus = 'error';
+            config.lastSyncError = error.message;
+            
+            await query(`
+              UPDATE app_settings SET value = $1, updated_at = NOW() WHERE key = 'teams_config'
+            `, [JSON.stringify(config)]);
+          }
+        } catch (updateError) {
+          console.log('Failed to update Teams sync error status:', updateError.message);
+        }
 
         console.error('❌ Teams sync job failed:', error);
 
@@ -1173,37 +1201,49 @@ router.post('/teams/sync', requireAdmin, async (req, res) => {
  */
 router.get('/teams/sync/status', requireAuth, async (req, res) => {
   try {
-    // Get latest sync job
-    const syncJobResult = await query(`
-      SELECT * FROM teams_sync_jobs
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
-
-    // Get Teams config for last sync info
+    // Get Teams config from unified app_settings table
     const configResult = await query(`
-      SELECT last_sync_at, last_sync_status, last_sync_error
-      FROM teams_config
-      WHERE tenant_id = 'default'
+      SELECT value FROM app_settings WHERE key = 'teams_config'
     `);
+    
+    const config = configResult.rows.length > 0 ? configResult.rows[0].value : null;
 
-    const syncJob = syncJobResult.rows.length > 0 ? syncJobResult.rows[0] : null;
-    const config = configResult.rows.length > 0 ? configResult.rows[0] : null;
+    // Get latest Teams sync job from unified sync_jobs table
+    let syncJob = null;
+    try {
+      const syncJobResult = await query(`
+        SELECT 
+          id,
+          status,
+          started_at,
+          completed_at,
+          error_message,
+          results,
+          parameters
+        FROM sync_jobs 
+        WHERE integration_type = 'teams' 
+        ORDER BY started_at DESC 
+        LIMIT 1
+      `);
+      
+      syncJob = syncJobResult.rows.length > 0 ? syncJobResult.rows[0] : null;
+    } catch (tableError) {
+      // sync_jobs table might not exist yet
+      console.log('sync_jobs table not found, returning default Teams sync status');
+    }
 
     res.json({
-      lastSync: config?.last_sync_at || null,
-      status: config?.last_sync_status || 'never',
-      error: config?.last_sync_error || null,
+      lastSync: config?.lastSync || null,
+      status: config?.lastSyncStatus || 'never',
+      error: config?.lastSyncError || null,
       currentJob: syncJob ? {
         id: syncJob.id,
         status: syncJob.status,
         startedAt: syncJob.started_at,
         completedAt: syncJob.completed_at,
-        totalTeams: syncJob.total_teams,
-        totalMessages: syncJob.total_messages,
-        processedMessages: syncJob.processed_messages,
-        flaggedMessages: syncJob.flagged_messages,
-        parameters: syncJob.parameters
+        errorMessage: syncJob.error_message,
+        results: syncJob.results || null,
+        parameters: syncJob.parameters || null
       } : null
     });
 
@@ -1235,55 +1275,62 @@ router.get('/teams/sync/status', requireAuth, async (req, res) => {
  */
 router.get('/google-workspace/config', requireAdmin, async (req, res) => {
   try {
-    const configResult = await query(`
-      SELECT * FROM google_workspace_config ORDER BY created_at DESC LIMIT 1
-    `);
+    // Get Google Workspace configuration from unified app_settings table
+    let googleWorkspaceConfig = {
+      isConfigured: false,
+      isActive: false,
+      gmailSyncEnabled: true,
+      driveSyncEnabled: false,
+      syncFrequencyHours: 24,
+      maxMessagesPerUser: 100,
+      daysBackToSync: 7,
+      status: 'not_configured',
+      domain: '',
+      serviceAccountEmail: '',
+      delegatedAdminEmail: '',
+      hasServiceAccountKey: false
+    };
 
-    if (configResult.rows.length === 0) {
-      return res.json({
-        isConfigured: false,
-        isActive: false,
-        gmailSyncEnabled: true,
-        driveSyncEnabled: true,
-        syncFrequencyHours: 24,
-        maxMessagesPerUser: 100,
-        daysBackToSync: 7,
-        status: 'not_configured',
-        domain: '',
-        serviceAccountEmail: '',
-        delegatedAdminEmail: ''
-      });
-    }
+    try {
+      const configResult = await query(`
+        SELECT value FROM app_settings WHERE key = 'google_workspace_config'
+      `);
 
-    const config = configResult.rows[0];
+      if (configResult.rows.length > 0) {
+        const config = configResult.rows[0].value;
+        
+        googleWorkspaceConfig = {
+          isConfigured: Boolean(config.serviceAccountEmail && config.delegatedAdminEmail && config.domain),
+          isActive: Boolean(config.isActive),
+          gmailSyncEnabled: Boolean(config.gmailSyncEnabled),
+          driveSyncEnabled: Boolean(config.driveSyncEnabled),
+          syncFrequencyHours: config.syncFrequencyHours || 24,
+          maxMessagesPerUser: config.maxMessagesPerUser || 100,
+          daysBackToSync: config.daysBackToSync || 7,
+          lastGmailSync: config.lastGmailSync,
+          lastDriveSync: config.lastDriveSync,
+          lastSyncStatus: config.lastSyncStatus,
+          domain: config.domain || '',
+          serviceAccountEmail: config.serviceAccountEmail || '',
+          delegatedAdminEmail: config.delegatedAdminEmail || '',
+          hasServiceAccountKey: Boolean(config.serviceAccountKey)
+        };
 
-    // Determine status
-    let status = 'not_configured';
-    if (config.service_account_email && config.delegated_admin_email && config.domain) {
-      if (config.is_active) {
-        status = 'connected';
-      } else {
-        status = 'disabled';
+        // Determine status
+        if (googleWorkspaceConfig.isConfigured) {
+          if (googleWorkspaceConfig.isActive) {
+            googleWorkspaceConfig.status = 'connected';
+          } else {
+            googleWorkspaceConfig.status = 'disabled';
+          }
+        }
       }
+    } catch (error) {
+      // app_settings table might not exist or key not found, use defaults
+      console.log('Google Workspace config not found, using defaults');
     }
 
-    res.json({
-      isConfigured: Boolean(config.service_account_email && config.delegated_admin_email && config.domain),
-      isActive: Boolean(config.is_active),
-      gmailSyncEnabled: Boolean(config.gmail_sync_enabled),
-      driveSyncEnabled: Boolean(config.drive_sync_enabled),
-      syncFrequencyHours: config.sync_frequency_hours,
-      maxMessagesPerUser: config.max_messages_per_user,
-      daysBackToSync: config.days_back_to_sync,
-      lastGmailSync: config.last_gmail_sync_at,
-      lastDriveSync: config.last_drive_sync_at,
-      lastSyncStatus: config.last_sync_status,
-      status,
-      domain: config.domain || '',
-      serviceAccountEmail: config.service_account_email || '',
-      delegatedAdminEmail: config.delegated_admin_email || '',
-      hasServiceAccountKey: Boolean(config.service_account_key)
-    });
+    res.json(googleWorkspaceConfig);
 
   } catch (error) {
     console.error('Get Google Workspace config error:', error);
@@ -1350,36 +1397,30 @@ router.put('/google-workspace/config', requireAdmin, async (req, res) => {
       });
     }
 
-    // Update or insert configuration
+    // Prepare Google Workspace configuration object
+    const googleWorkspaceConfig = {
+      isConfigured: true,
+      isActive: Boolean(isActive),
+      gmailSyncEnabled: Boolean(gmailSyncEnabled),
+      driveSyncEnabled: Boolean(driveSyncEnabled),
+      syncFrequencyHours: parseInt(syncFrequencyHours) || 24,
+      maxMessagesPerUser: parseInt(maxMessagesPerUser) || 100,
+      daysBackToSync: parseInt(daysBackToSync) || 7,
+      domain: domain.toLowerCase().trim(),
+      serviceAccountEmail: serviceAccountEmail.toLowerCase().trim(),
+      serviceAccountKey: parsedServiceAccountKey,
+      delegatedAdminEmail: delegatedAdminEmail.toLowerCase().trim(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.id
+    };
+
+    // Save Google Workspace configuration to unified app_settings table
     await query(`
-      INSERT INTO google_workspace_config (
-        domain, service_account_email, service_account_key, delegated_admin_email,
-        is_active, gmail_sync_enabled, drive_sync_enabled, sync_frequency_hours,
-        max_messages_per_user, days_back_to_sync, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-      ON CONFLICT (domain) DO UPDATE SET
-        service_account_email = EXCLUDED.service_account_email,
-        service_account_key = EXCLUDED.service_account_key,
-        delegated_admin_email = EXCLUDED.delegated_admin_email,
-        is_active = EXCLUDED.is_active,
-        gmail_sync_enabled = EXCLUDED.gmail_sync_enabled,
-        drive_sync_enabled = EXCLUDED.drive_sync_enabled,
-        sync_frequency_hours = EXCLUDED.sync_frequency_hours,
-        max_messages_per_user = EXCLUDED.max_messages_per_user,
-        days_back_to_sync = EXCLUDED.days_back_to_sync,
-        updated_at = NOW()
-    `, [
-      domain.toLowerCase().trim(),
-      serviceAccountEmail.toLowerCase().trim(),
-      JSON.stringify(parsedServiceAccountKey),
-      delegatedAdminEmail.toLowerCase().trim(),
-      Boolean(isActive),
-      Boolean(gmailSyncEnabled),
-      Boolean(driveSyncEnabled),
-      parseInt(syncFrequencyHours) || 24,
-      parseInt(maxMessagesPerUser) || 100,
-      parseInt(daysBackToSync) || 7
-    ]);
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ('google_workspace_config', $1, NOW())
+      ON CONFLICT (key)
+      DO UPDATE SET value = $1, updated_at = NOW()
+    `, [JSON.stringify(googleWorkspaceConfig)]);
 
     res.json({
       success: true,
@@ -1410,9 +1451,9 @@ router.put('/google-workspace/config', requireAdmin, async (req, res) => {
  */
 router.post('/google-workspace/test', requireAdmin, async (req, res) => {
   try {
-    // Load Google Workspace configuration
+    // Load Google Workspace configuration from unified app_settings table
     const configResult = await query(`
-      SELECT * FROM google_workspace_config ORDER BY created_at DESC LIMIT 1
+      SELECT value FROM app_settings WHERE key = 'google_workspace_config'
     `);
 
     if (configResult.rows.length === 0) {
@@ -1422,32 +1463,21 @@ router.post('/google-workspace/test', requireAdmin, async (req, res) => {
       });
     }
 
-    const config = configResult.rows[0];
+    const config = configResult.rows[0].value;
 
-    if (!config.service_account_email || !config.service_account_key || !config.delegated_admin_email || !config.domain) {
+    if (!config.serviceAccountEmail || !config.serviceAccountKey || !config.delegatedAdminEmail || !config.domain) {
       return res.status(400).json({
         error: 'Google Workspace configuration incomplete',
         code: 'GOOGLE_WORKSPACE_INCOMPLETE_CONFIG'
       });
     }
 
-    // Parse service account key
-    let serviceAccountKey;
-    try {
-      serviceAccountKey = JSON.parse(config.service_account_key);
-    } catch (error) {
-      return res.status(400).json({
-        error: 'Invalid service account key format',
-        code: 'INVALID_SERVICE_ACCOUNT_KEY'
-      });
-    }
-
     // Initialize and test connection
     const connectorConfig = {
       domain: config.domain,
-      serviceAccountEmail: config.service_account_email,
-      serviceAccountKey: serviceAccountKey,
-      delegatedAdminEmail: config.delegated_admin_email
+      serviceAccountEmail: config.serviceAccountEmail,
+      serviceAccountKey: config.serviceAccountKey,
+      delegatedAdminEmail: config.delegatedAdminEmail
     };
 
     await googleWorkspaceConnector.initialize(connectorConfig);
@@ -1491,57 +1521,54 @@ router.post('/google-workspace/sync', requireAdmin, async (req, res) => {
   try {
     const { syncType = 'gmail', daysBack = 7, maxMessagesPerUser = 100, batchSize = 3 } = req.body;
 
-    // Check Google Workspace configuration
+    // Check Google Workspace configuration from unified app_settings table
     const configResult = await query(`
-      SELECT * FROM google_workspace_config ORDER BY created_at DESC LIMIT 1
+      SELECT value FROM app_settings WHERE key = 'google_workspace_config'
     `);
 
-    if (configResult.rows.length === 0 || !configResult.rows[0].is_active) {
+    if (configResult.rows.length === 0) {
       return res.status(400).json({
-        error: 'Google Workspace integration not active',
-        code: 'GOOGLE_WORKSPACE_NOT_ACTIVE'
+        error: 'Google Workspace not configured',
+        code: 'GOOGLE_WORKSPACE_NOT_CONFIGURED'
       });
     }
 
-    const config = configResult.rows[0];
+    const config = configResult.rows[0].value;
 
-    if (!config.service_account_email || !config.service_account_key || !config.delegated_admin_email) {
+    if (!config.isActive) {
+      return res.status(400).json({
+        error: 'Google Workspace integration is disabled',
+        code: 'GOOGLE_WORKSPACE_DISABLED'
+      });
+    }
+
+    if (!config.serviceAccountEmail || !config.serviceAccountKey || !config.delegatedAdminEmail) {
       return res.status(400).json({
         error: 'Google Workspace configuration incomplete',
         code: 'GOOGLE_WORKSPACE_INCOMPLETE_CONFIG'
       });
     }
 
-    // Parse service account key
-    let serviceAccountKey;
-    try {
-      serviceAccountKey = JSON.parse(config.service_account_key);
-    } catch (error) {
-      return res.status(400).json({
-        error: 'Invalid service account key format',
-        code: 'INVALID_SERVICE_ACCOUNT_KEY'
-      });
-    }
-
     // Initialize connector
     const connectorConfig = {
       domain: config.domain,
-      serviceAccountEmail: config.service_account_email,
-      serviceAccountKey: serviceAccountKey,
-      delegatedAdminEmail: config.delegated_admin_email
+      serviceAccountEmail: config.serviceAccountEmail,
+      serviceAccountKey: config.serviceAccountKey,
+      delegatedAdminEmail: config.delegatedAdminEmail
     };
 
     await googleWorkspaceConnector.initialize(connectorConfig);
 
-    // Store sync job info
+    // Store sync job info in unified sync_jobs table
     const syncJobResult = await query(`
-      INSERT INTO google_workspace_sync_jobs (
-        sync_type, status, parameters, started_at, started_by
-      ) VALUES ($1, 'running', $2, NOW(), $3)
+      INSERT INTO sync_jobs (
+        integration_type, status, parameters, started_at, started_by
+      ) VALUES ($1, $2, $3, NOW(), $4)
       RETURNING id
     `, [
-      syncType,
-      JSON.stringify({ daysBack, maxMessagesPerUser, batchSize }),
+      'google_workspace',
+      'running',
+      JSON.stringify({ syncType, daysBack, maxMessagesPerUser, batchSize }),
       req.user.id
     ]);
 
@@ -1566,30 +1593,34 @@ router.post('/google-workspace/sync', requireAdmin, async (req, res) => {
     syncPromise.then(async (result) => {
       try {
         await query(`
-          UPDATE google_workspace_sync_jobs SET
-            status = 'completed',
+          UPDATE sync_jobs 
+          SET 
+            status = $1,
             completed_at = NOW(),
-            total_users = $1,
-            total_messages = $2,
-            processed_messages = $3,
-            flagged_messages = $4
-          WHERE id = $5
+            results = $2
+          WHERE id = $3
         `, [
-          result.totalUsers,
-          result.totalMessages,
-          result.processedMessages,
-          result.flaggedMessages,
+          'completed',
+          JSON.stringify(result),
           syncJobId
         ]);
 
-        // Update config with last sync info
-        await query(`
-          UPDATE google_workspace_config SET
-            last_gmail_sync_at = NOW(),
-            last_sync_status = 'success',
-            last_sync_error = NULL
-          WHERE domain = $1
-        `, [config.domain]);
+        // Update Google Workspace config with last sync info in unified app_settings
+        try {
+          const configResult = await query(`SELECT value FROM app_settings WHERE key = 'google_workspace_config'`);
+          if (configResult.rows.length > 0) {
+            const config = { ...configResult.rows[0].value };
+            config.lastGmailSync = new Date().toISOString();
+            config.lastSyncStatus = 'success';
+            config.lastSyncError = null;
+            
+            await query(`
+              UPDATE app_settings SET value = $1, updated_at = NOW() WHERE key = 'google_workspace_config'
+            `, [JSON.stringify(config)]);
+          }
+        } catch (error) {
+          console.log('Failed to update Google Workspace sync status:', error.message);
+        }
 
         console.log('✅ Google Workspace sync job completed successfully:', result);
 
@@ -1599,21 +1630,30 @@ router.post('/google-workspace/sync', requireAdmin, async (req, res) => {
     }).catch(async (error) => {
       try {
         await query(`
-          UPDATE google_workspace_sync_jobs SET
-            status = 'failed',
+          UPDATE sync_jobs 
+          SET 
+            status = $1,
             completed_at = NOW(),
-            error_message = $1
-          WHERE id = $2
-        `, [error.message, syncJobId]);
+            error_message = $2
+          WHERE id = $3
+        `, ['failed', error.message, syncJobId]);
 
-        // Update config with error info
-        await query(`
-          UPDATE google_workspace_config SET
-            last_gmail_sync_at = NOW(),
-            last_sync_status = 'error',
-            last_sync_error = $1
-          WHERE domain = $2
-        `, [error.message, config.domain]);
+        // Update Google Workspace config with error info in unified app_settings
+        try {
+          const configResult = await query(`SELECT value FROM app_settings WHERE key = 'google_workspace_config'`);
+          if (configResult.rows.length > 0) {
+            const config = { ...configResult.rows[0].value };
+            config.lastGmailSync = new Date().toISOString();
+            config.lastSyncStatus = 'error';
+            config.lastSyncError = error.message;
+            
+            await query(`
+              UPDATE app_settings SET value = $1, updated_at = NOW() WHERE key = 'google_workspace_config'
+            `, [JSON.stringify(config)]);
+          }
+        } catch (updateError) {
+          console.log('Failed to update Google Workspace sync error status:', updateError.message);
+        }
 
         console.error('❌ Google Workspace sync job failed:', error);
 
@@ -1659,40 +1699,48 @@ router.post('/google-workspace/sync', requireAdmin, async (req, res) => {
  */
 router.get('/google-workspace/sync/status', requireAuth, async (req, res) => {
   try {
-    // Get latest sync job
-    const syncJobResult = await query(`
-      SELECT * FROM google_workspace_sync_jobs
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
-
-    // Get config for last sync info
+    // Get Google Workspace config from unified app_settings table
     const configResult = await query(`
-      SELECT last_gmail_sync_at, last_drive_sync_at, last_sync_status, last_sync_error
-      FROM google_workspace_config
-      ORDER BY created_at DESC
-      LIMIT 1
+      SELECT value FROM app_settings WHERE key = 'google_workspace_config'
     `);
+    const config = configResult.rows.length > 0 ? configResult.rows[0].value : null;
 
-    const syncJob = syncJobResult.rows.length > 0 ? syncJobResult.rows[0] : null;
-    const config = configResult.rows.length > 0 ? configResult.rows[0] : null;
+    // Get latest Google Workspace sync job from unified sync_jobs table
+    let syncJob = null;
+    try {
+      const syncJobResult = await query(`
+        SELECT
+          id,
+          status,
+          started_at,
+          completed_at,
+          error_message,
+          results,
+          parameters
+        FROM sync_jobs
+        WHERE integration_type = 'google_workspace'
+        ORDER BY started_at DESC
+        LIMIT 1
+      `);
+      syncJob = syncJobResult.rows.length > 0 ? syncJobResult.rows[0] : null;
+    } catch (tableError) {
+      // sync_jobs table might not exist yet
+      console.log('sync_jobs table not found, returning default Google Workspace sync status');
+    }
 
     res.json({
-      lastGmailSync: config?.last_gmail_sync_at || null,
-      lastDriveSync: config?.last_drive_sync_at || null,
-      status: config?.last_sync_status || 'never',
-      error: config?.last_sync_error || null,
+      lastGmailSync: config?.lastGmailSync || null,
+      lastDriveSync: config?.lastDriveSync || null,
+      status: config?.lastSyncStatus || 'never',
+      error: config?.lastSyncError || null,
       currentJob: syncJob ? {
         id: syncJob.id,
-        syncType: syncJob.sync_type,
         status: syncJob.status,
         startedAt: syncJob.started_at,
         completedAt: syncJob.completed_at,
-        totalUsers: syncJob.total_users,
-        totalMessages: syncJob.total_messages,
-        processedMessages: syncJob.processed_messages,
-        flaggedMessages: syncJob.flagged_messages,
-        parameters: syncJob.parameters
+        errorMessage: syncJob.error_message,
+        results: syncJob.results || null,
+        parameters: syncJob.parameters || null
       } : null
     });
 
@@ -1724,9 +1772,28 @@ router.get('/google-workspace/sync/status', requireAuth, async (req, res) => {
  */
 router.get('/slack/config', requireAdmin, async (req, res) => {
   try {
-    const configResult = await query(`
-      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
-    `);
+    let configResult;
+    try {
+      configResult = await query(`
+        SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+      `);
+    } catch (dbError) {
+      // Table doesn't exist, return default config
+      console.log('Slack config table not found, using defaults');
+      return res.json({
+        isConfigured: false,
+        isActive: false,
+        syncEnabled: true,
+        syncFrequencyHours: 24,
+        maxMessagesPerChannel: 200,
+        daysBackToSync: 7,
+        syncPrivateChannels: false,
+        status: 'not_configured',
+        workspaceName: '',
+        workspaceId: '',
+        botUserId: ''
+      });
+    }
 
     if (configResult.rows.length === 0) {
       return res.json({
@@ -2442,67 +2509,82 @@ router.get('/status', async (req, res) => {
     }
 
     // Check Teams configuration
-    const teamsResult = await query(`
-      SELECT * FROM teams_config WHERE tenant_id = 'default' LIMIT 1
-    `);
+    try {
+      const teamsResult = await query(`
+        SELECT * FROM teams_config WHERE tenant_id = 'default' LIMIT 1
+      `);
 
-    if (teamsResult.rows.length > 0 && office365Result.rows.length > 0) {
-      const office365Config = office365Result.rows[0].value;
-      const teamsConfig = teamsResult.rows[0];
-      
-      integrations.teams = {
-        isConfigured: Boolean(office365Config.isConfigured), // Teams depends on Office 365
-        isActive: Boolean(teamsConfig.is_active),
-        status: office365Config.isConfigured 
-          ? (teamsConfig.is_active ? 'connected' : 'disabled')
-          : 'not_configured'
-      };
+      if (teamsResult.rows.length > 0 && office365Result.rows.length > 0) {
+        const office365Config = office365Result.rows[0].value;
+        const teamsConfig = teamsResult.rows[0];
+        
+        integrations.teams = {
+          isConfigured: Boolean(office365Config.isConfigured), // Teams depends on Office 365
+          isActive: Boolean(teamsConfig.is_active),
+          status: office365Config.isConfigured 
+            ? (teamsConfig.is_active ? 'connected' : 'disabled')
+            : 'not_configured'
+        };
+      }
+    } catch (error) {
+      // teams_config table doesn't exist, keep default values
+      console.log('Teams config table not found, using defaults');
     }
 
     // Check Google Workspace configuration
-    const googleWorkspaceResult = await query(`
-      SELECT * FROM google_workspace_config ORDER BY created_at DESC LIMIT 1
-    `);
+    try {
+      const googleWorkspaceResult = await query(`
+        SELECT value FROM app_settings WHERE key = 'google_workspace_config'
+      `);
 
-    if (googleWorkspaceResult.rows.length > 0) {
-      const config = googleWorkspaceResult.rows[0];
-      const isConfigured = Boolean(
-        config.service_account_email && 
-        config.service_account_key && 
-        config.delegated_admin_email && 
-        config.domain
-      );
-      
-      integrations.google_workspace = {
-        isConfigured: isConfigured,
-        isActive: Boolean(config.is_active),
-        status: isConfigured 
-          ? (config.is_active ? 'connected' : 'disabled')
-          : 'not_configured'
-      };
+      if (googleWorkspaceResult.rows.length > 0) {
+        const config = googleWorkspaceResult.rows[0].value;
+        const isConfigured = Boolean(
+          config.serviceAccountEmail && 
+          config.serviceAccountKey && 
+          config.delegatedAdminEmail && 
+          config.domain
+        );
+        
+        integrations.google_workspace = {
+          isConfigured: isConfigured,
+          isActive: Boolean(config.isActive),
+          status: isConfigured 
+            ? (config.isActive ? 'connected' : 'disabled')
+            : 'not_configured'
+        };
+      }
+    } catch (error) {
+      // google_workspace_config key doesn't exist in app_settings, keep default values
+      console.log('Google Workspace config not found, using defaults');
     }
 
     // Check Slack configuration
-    const slackResult = await query(`
-      SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
-    `);
+    try {
+      const slackResult = await query(`
+        SELECT * FROM slack_config ORDER BY created_at DESC LIMIT 1
+      `);
 
-    if (slackResult.rows.length > 0) {
-      const config = slackResult.rows[0];
-      const isConfigured = Boolean(
-        config.bot_token && 
-        config.workspace_id &&
-        config.client_id &&
-        config.client_secret
-      );
-      
-      integrations.slack = {
-        isConfigured: isConfigured,
-        isActive: Boolean(config.is_active),
-        status: isConfigured 
-          ? (config.is_active ? 'connected' : 'disabled')
-          : 'not_configured'
-      };
+      if (slackResult.rows.length > 0) {
+        const config = slackResult.rows[0];
+        const isConfigured = Boolean(
+          config.bot_token && 
+          config.workspace_id &&
+          config.client_id &&
+          config.client_secret
+        );
+        
+        integrations.slack = {
+          isConfigured: isConfigured,
+          isActive: Boolean(config.is_active),
+          status: isConfigured 
+            ? (config.is_active ? 'connected' : 'disabled')
+            : 'not_configured'
+        };
+      }
+    } catch (error) {
+      // slack_config table doesn't exist, keep default values
+      console.log('Slack config table not found, using defaults');
     }
 
     res.json(integrations);

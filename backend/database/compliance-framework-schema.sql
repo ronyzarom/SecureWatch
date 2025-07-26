@@ -139,43 +139,35 @@ CREATE TABLE IF NOT EXISTS compliance_audit_log (
     user_agent TEXT
 );
 
--- Table for compliance violations and remediation tracking
-CREATE TABLE IF NOT EXISTS compliance_incidents (
-    id SERIAL PRIMARY KEY,
-    incident_type VARCHAR(50) NOT NULL, -- 'data_breach', 'policy_violation', 'retention_overdue'
-    severity VARCHAR(20) NOT NULL, -- 'low', 'medium', 'high', 'critical'
-    status VARCHAR(20) DEFAULT 'open', -- 'open', 'investigating', 'resolved', 'closed'
-    
-    -- Related entities
-    employee_id INTEGER REFERENCES employees(id),
-    violation_id INTEGER REFERENCES violations(id),
-    regulation_id INTEGER REFERENCES compliance_regulations(id),
-    policy_id INTEGER REFERENCES internal_policies(id),
-    
-    -- Incident details
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    impact_assessment TEXT,
-    remediation_plan TEXT,
-    
-    -- Timeline
-    discovered_at TIMESTAMP DEFAULT NOW(),
-    must_notify_by TIMESTAMP,
-    resolved_at TIMESTAMP,
-    
-    -- Assignment
-    assigned_to INTEGER REFERENCES users(id),
-    escalated_to INTEGER REFERENCES users(id),
-    
-    -- Metadata
-    created_by INTEGER REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    -- Constraints
-    CONSTRAINT valid_incident_severity CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-    CONSTRAINT valid_incident_status CHECK (status IN ('open', 'investigating', 'resolved', 'closed'))
-);
+-- Note: compliance_incidents is now a VIEW based on the enhanced violations table
+-- This provides backward compatibility while using a single source of truth
+
+-- Create view for compliance incidents (backward compatibility)
+CREATE OR REPLACE VIEW compliance_incidents AS
+SELECT 
+  id,
+  incident_type,
+  severity,
+  workflow_status as status,
+  employee_id,
+  id as violation_id, -- Self-reference since violation IS the incident
+  regulation_id,
+  policy_id,
+  type as title,
+  description,
+  impact_assessment,
+  discovered_at,
+  must_notify_by,
+  resolved_at,
+  assigned_to,
+  escalated_to,
+  created_at,
+  updated_at
+FROM violations 
+WHERE source IN ('compliance_analysis', 'regulatory_compliance_analysis', 'policy_compliance_analysis', 'email_security_violation', 'manual_compliance_incident')
+   OR compliance_category IS NOT NULL
+   OR regulation_id IS NOT NULL 
+   OR policy_id IS NOT NULL;
 
 -- ========================================
 -- INDEXES FOR PERFORMANCE
@@ -192,8 +184,11 @@ CREATE INDEX IF NOT EXISTS idx_internal_policies_roles ON internal_policies USIN
 CREATE INDEX IF NOT EXISTS idx_internal_policies_priority ON internal_policies(priority_order, is_active);
 
 -- Compliance profiles indexes
-CREATE INDEX IF NOT EXISTS idx_compliance_profiles_regulations ON compliance_profiles USING gin(applicable_regulations);
-CREATE INDEX IF NOT EXISTS idx_compliance_profiles_policies ON compliance_profiles USING gin(applicable_policies);
+CREATE INDEX IF NOT EXISTS idx_compliance_profiles_monitoring ON compliance_profiles(monitoring_level, data_classification);
+
+-- Audit log indexes
+CREATE INDEX IF NOT EXISTS idx_compliance_audit_log_entity ON compliance_audit_log(entity_type, entity_id, performed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_compliance_audit_log_user ON compliance_audit_log(performed_by, performed_at DESC);
 
 -- Enhanced employee indexes
 CREATE INDEX IF NOT EXISTS idx_employees_compliance_profile ON employees(compliance_profile_id);
@@ -205,16 +200,12 @@ CREATE INDEX IF NOT EXISTS idx_violations_compliance_category ON violations(comp
 CREATE INDEX IF NOT EXISTS idx_violations_compliance_severity ON violations(compliance_severity) WHERE compliance_severity IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_violations_requires_notification ON violations(requires_notification, created_at) WHERE requires_notification = true;
 
--- Audit log indexes
-CREATE INDEX IF NOT EXISTS idx_compliance_audit_log_entity ON compliance_audit_log(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_compliance_audit_log_performed_at ON compliance_audit_log(performed_at DESC);
-CREATE INDEX IF NOT EXISTS idx_compliance_audit_log_performed_by ON compliance_audit_log(performed_by, performed_at DESC);
-
--- Compliance incidents indexes
-CREATE INDEX IF NOT EXISTS idx_compliance_incidents_status ON compliance_incidents(status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_compliance_incidents_employee ON compliance_incidents(employee_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_compliance_incidents_severity ON compliance_incidents(severity, status);
-CREATE INDEX IF NOT EXISTS idx_compliance_incidents_notification_due ON compliance_incidents(must_notify_by) WHERE must_notify_by IS NOT NULL AND status != 'closed';
+-- Enhanced violations table indexes for compliance queries (replaces compliance_incidents indexes)
+CREATE INDEX IF NOT EXISTS idx_violations_compliance_source ON violations(source) WHERE source LIKE '%compliance%';
+CREATE INDEX IF NOT EXISTS idx_violations_workflow_status ON violations(workflow_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_violations_regulation_id ON violations(regulation_id) WHERE regulation_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_violations_policy_id ON violations(policy_id) WHERE policy_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_violations_must_notify_by ON violations(must_notify_by) WHERE must_notify_by IS NOT NULL;
 
 -- ========================================
 -- TRIGGERS FOR AUDIT TRAIL
@@ -395,26 +386,30 @@ LEFT JOIN compliance_profiles cp ON e.compliance_profile_id = cp.id;
 -- View for active compliance incidents requiring attention
 CREATE OR REPLACE VIEW compliance_incidents_dashboard AS
 SELECT 
-    ci.id,
-    ci.incident_type,
-    ci.severity,
-    ci.status,
-    ci.title,
-    ci.discovered_at,
-    ci.must_notify_by,
+    v.id,
+    v.incident_type,
+    v.severity,
+    v.workflow_status as status,
+    v.type as title,
+    v.discovered_at,
+    v.must_notify_by,
     e.name as employee_name,
     e.email as employee_email,
     cr.regulation_name,
     ip.policy_name,
     CASE 
-        WHEN ci.must_notify_by IS NOT NULL AND ci.must_notify_by < NOW() THEN 'notification_overdue'
-        WHEN ci.must_notify_by IS NOT NULL AND ci.must_notify_by < NOW() + INTERVAL '24 hours' THEN 'notification_due_soon'
+        WHEN v.must_notify_by IS NOT NULL AND v.must_notify_by < NOW() THEN 'notification_overdue'
+        WHEN v.must_notify_by IS NOT NULL AND v.must_notify_by < NOW() + INTERVAL '24 hours' THEN 'notification_due_soon'
         ELSE 'on_track'
     END as notification_status
-FROM compliance_incidents ci
-LEFT JOIN employees e ON ci.employee_id = e.id
-LEFT JOIN compliance_regulations cr ON ci.regulation_id = cr.id
-LEFT JOIN internal_policies ip ON ci.policy_id = ip.id
-WHERE ci.status IN ('open', 'investigating');
+FROM violations v
+LEFT JOIN employees e ON v.employee_id = e.id
+LEFT JOIN compliance_regulations cr ON v.regulation_id = cr.id
+LEFT JOIN internal_policies ip ON v.policy_id = ip.id
+WHERE v.workflow_status IN ('open', 'investigating')
+  AND (v.source LIKE '%compliance%' 
+       OR v.compliance_category IS NOT NULL
+       OR v.regulation_id IS NOT NULL 
+       OR v.policy_id IS NOT NULL);
 
 COMMENT ON SCHEMA public IS 'SecureWatch database with compliance framework integration'; 

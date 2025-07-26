@@ -30,6 +30,13 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Auto-logout function to handle session expiration
+let handleAutoLogout: (() => void) | null = null;
+
+export const setAutoLogoutHandler = (logoutHandler: () => void) => {
+  handleAutoLogout = logoutHandler;
+};
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => {
@@ -47,10 +54,24 @@ api.interceptors.response.use(
       console.error(`[API] ❌ ${status} ${url}:`, error.response?.data);
     }
     
-    if (status === 401) {
-      // Handle authentication errors
-      console.log('[API] Authentication required - redirecting to login');
+    if (status === 401 || status === 403) {
+      // Handle authentication/authorization errors
+      const errorData = error.response?.data as any;
+      
+      // Check if this is an authentication failure (not expected like auth/me)
+      if (!url?.includes('/api/auth/me') && !url?.includes('/api/auth/login')) {
+        console.log('[API] Session expired or authentication failed - triggering automatic logout');
+        
+        // Trigger automatic logout if handler is available
+        if (handleAutoLogout) {
+          // Small delay to prevent multiple simultaneous logout calls
+          setTimeout(() => {
+            handleAutoLogout?.();
+          }, 100);
+        }
+      }
     }
+    
     return Promise.reject(error);
   }
 );

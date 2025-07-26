@@ -54,25 +54,72 @@ router.get('/overview', async (req, res) => {
 
     // Get overall activity statistics
     const overviewQuery = `
+      WITH active_employees AS (
+        SELECT id FROM employees 
+        WHERE is_active = true${departmentCondition}
+      )
       SELECT 
         COUNT(DISTINCT e.id) as total_employees,
         COUNT(DISTINCT CASE WHEN e.risk_level IN ('High', 'Critical') THEN e.id END) as high_risk_employees,
-        COUNT(v.id) as total_violations,
-        COUNT(CASE WHEN v.severity = 'Critical' THEN 1 END) as critical_violations,
-        COUNT(ec.id) as total_emails,
-        COUNT(CASE WHEN ec.is_flagged = true THEN 1 END) as flagged_emails,
+        (SELECT COUNT(*) 
+         FROM violations v 
+         WHERE v.employee_id IN (SELECT id FROM active_employees)
+           AND v.created_at > NOW() - INTERVAL '1 day' * $1
+        ) as total_violations,
+        (SELECT COUNT(*) 
+         FROM violations v 
+         WHERE v.employee_id IN (SELECT id FROM active_employees)
+           AND v.created_at > NOW() - INTERVAL '1 day' * $1
+           AND v.severity = 'Critical'
+        ) as critical_violations,
+        (SELECT COUNT(*) 
+         FROM email_communications ec 
+         WHERE ec.sender_employee_id IN (SELECT id FROM active_employees)
+           AND ec.sent_at > NOW() - INTERVAL '1 day' * $1
+        ) as total_emails,
+        (SELECT COUNT(*) 
+         FROM email_communications ec 
+         WHERE ec.sender_employee_id IN (SELECT id FROM active_employees)
+           AND ec.sent_at > NOW() - INTERVAL '1 day' * $1
+           AND ec.is_flagged = true
+        ) as flagged_emails,
         ROUND(AVG(e.risk_score), 2) as avg_risk_score,
-        ROUND(AVG(em.email_volume), 2) as avg_email_volume,
-        ROUND(AVG(em.external_contacts), 2) as avg_external_contacts,
-        ROUND(AVG(em.after_hours_activity), 2) as avg_after_hours_activity,
-        ROUND(AVG(em.data_transfer), 2) as avg_data_transfer
+        (SELECT ROUND((COUNT(*)::numeric / $1)::numeric, 2) 
+         FROM email_communications ec 
+         WHERE ec.sender_employee_id IN (SELECT id FROM active_employees)
+           AND ec.sent_at > NOW() - INTERVAL '1 day' * $1
+        ) as avg_email_volume,
+        (SELECT COUNT(DISTINCT recipient->>'email') 
+         FROM email_communications ec,
+              jsonb_array_elements(ec.recipients) as recipient
+         WHERE ec.sender_employee_id IN (SELECT id FROM active_employees)
+           AND ec.sent_at > NOW() - INTERVAL '1 day' * $1
+           AND recipient->>'email' NOT LIKE '%@zaromh.com' 
+           AND recipient->>'email' NOT LIKE '%@cyfox.com'
+        ) as avg_external_contacts,
+        (SELECT ROUND(
+           ((COUNT(CASE 
+             WHEN EXTRACT(hour FROM ec.sent_at) < 9 OR EXTRACT(hour FROM ec.sent_at) > 17 
+               OR EXTRACT(dow FROM ec.sent_at) IN (0, 6) 
+             THEN 1 
+           END)::numeric / NULLIF(COUNT(*)::numeric, 0)) * 100)::numeric, 2
+         ) 
+         FROM email_communications ec 
+         WHERE ec.sender_employee_id IN (SELECT id FROM active_employees)
+           AND ec.sent_at > NOW() - INTERVAL '1 day' * $1
+        ) as avg_after_hours_activity,
+        (SELECT ROUND(
+           (COALESCE(SUM(
+             (SELECT SUM((attachment->>'size')::numeric) 
+              FROM jsonb_array_elements(ec.attachments) as attachment
+              WHERE attachment->>'size' IS NOT NULL)
+           ), 0) / (1024*1024*1024))::numeric, 2
+         ) 
+         FROM email_communications ec 
+         WHERE ec.sender_employee_id IN (SELECT id FROM active_employees)
+           AND ec.sent_at > NOW() - INTERVAL '1 day' * $1
+        ) as avg_data_transfer
       FROM employees e
-      LEFT JOIN violations v ON e.id = v.employee_id 
-        AND v.created_at > NOW() - INTERVAL '1 day' * $1
-      LEFT JOIN email_communications ec ON e.id = ec.sender_employee_id 
-        AND ec.sent_at > NOW() - INTERVAL '1 day' * $1
-      LEFT JOIN employee_metrics em ON e.id = em.employee_id 
-        AND em.date > NOW() - INTERVAL '1 day' * $1
       WHERE e.is_active = true${departmentCondition}
     `;
 

@@ -81,7 +81,7 @@ async function initializeComplianceFramework() {
       { name: 'Compliance Regulations', query: 'SELECT COUNT(*) FROM compliance_regulations' },
       { name: 'Internal Policies', query: 'SELECT COUNT(*) FROM internal_policies' },
       { name: 'Compliance Profiles', query: 'SELECT COUNT(*) FROM compliance_profiles' },
-      { name: 'Compliance Incidents', query: 'SELECT COUNT(*) FROM compliance_incidents' },
+      { name: 'Compliance Incidents', query: 'SELECT COUNT(*) FROM compliance_incidents' }, // View from violations table
       { name: 'Compliance Audit Log', query: 'SELECT COUNT(*) FROM compliance_audit_log' }
     ];
 

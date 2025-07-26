@@ -160,31 +160,24 @@ export const ActivityReportsPage: React.FC = () => {
     riskAnomalies: Anomaly[];
   } | null>(null);
 
+  // Trends data
+  const [trendsData, setTrendsData] = useState<TrendsData | null>(null);
+  
   // Comparison data
   const [comparisonData, setComparisonData] = useState<ComparisonData | null>(null);
   const [availableEmployees, setAvailableEmployees] = useState<Array<{id: number, name: string, department: string}>>([]);
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
   
-  // Comparison filters
+  // Comparison filters (only non-time filters)
   const [comparisonFilters, setComparisonFilters] = useState({
     type: 'departments' as 'employees' | 'departments',
     selectedEmployees: [] as number[],
-    selectedDepartments: [] as string[],
-    days: 30
+    selectedDepartments: [] as string[]
   });
 
-  // Trends data
-  const [trendsData, setTrendsData] = useState<TrendsData | null>(null);
-  
-  // Trends filters
-  const [trendsFilters, setTrendsFilters] = useState({
-    days: 30,
-    groupBy: 'day' as 'day' | 'week' | 'month'
-  });
-
-  // Filters
+  // Unified filters for ALL tabs
   const [filters, setFilters] = useState({
-    days: 30,
+    days: 7, // Start with 7 days to match what user expects
     department: '',
     groupBy: 'day' as 'day' | 'week' | 'month'
   });
@@ -259,7 +252,7 @@ export const ActivityReportsPage: React.FC = () => {
       
       let queryParams: any = {
         type: comparisonFilters.type,
-        days: comparisonFilters.days
+        days: filters.days // Use the unified filters.days
       };
       
       if (comparisonFilters.type === 'employees' && comparisonFilters.selectedEmployees.length > 0) {
@@ -283,8 +276,8 @@ export const ActivityReportsPage: React.FC = () => {
       setError(null);
       
       const data = await activityReportsAPI.getTrends({
-        days: trendsFilters.days,
-        groupBy: trendsFilters.groupBy
+        days: filters.days, // Use the unified filters.days
+        groupBy: filters.groupBy
       });
       
       setTrendsData(data);
@@ -307,13 +300,13 @@ export const ActivityReportsPage: React.FC = () => {
          (comparisonFilters.type === 'departments'))) {
       fetchComparisonData();
     }
-  }, [activeTab, comparisonFilters]);
+  }, [activeTab, comparisonFilters, filters.days]); // Added filters.days to dependency array
 
   useEffect(() => {
     if (activeTab === 'trends') {
       fetchTrendsData();
     }
-  }, [activeTab, trendsFilters]);
+  }, [activeTab, filters.days, filters.groupBy]); // Added filters.days and filters.groupBy to dependency array
 
   const exportReport = async () => {
     try {
@@ -766,34 +759,14 @@ export const ActivityReportsPage: React.FC = () => {
       <div className="space-y-6">
         {/* Trends Controls */}
         <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Time Period
-              </label>
-              <select
-                value={trendsFilters.days}
-                onChange={(e) => setTrendsFilters({
-                  ...trendsFilters,
-                  days: parseInt(e.target.value)
-                })}
-                className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              >
-                <option value={7}>Last 7 days</option>
-                <option value={30}>Last 30 days</option>
-                <option value={90}>Last 90 days</option>
-              </select>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Group By
               </label>
               <select
-                value={trendsFilters.groupBy}
-                onChange={(e) => setTrendsFilters({
-                  ...trendsFilters,
-                  groupBy: e.target.value as 'day' | 'week' | 'month'
-                })}
+                value={filters.groupBy}
+                onChange={(e) => setFilters(prev => ({ ...prev, groupBy: e.target.value as 'day' | 'week' | 'month' }))}
                 className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               >
                 <option value="day">Daily</option>
@@ -1215,7 +1188,7 @@ export const ActivityReportsPage: React.FC = () => {
             <div className="space-y-6">
               {/* Comparison Controls */}
               <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Comparison Type */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1233,25 +1206,6 @@ export const ActivityReportsPage: React.FC = () => {
                     >
                       <option value="departments">Departments</option>
                       <option value="employees">Employees</option>
-                    </select>
-                  </div>
-
-                  {/* Time Period */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Time Period
-                    </label>
-                    <select
-                      value={comparisonFilters.days}
-                      onChange={(e) => setComparisonFilters({
-                        ...comparisonFilters,
-                        days: parseInt(e.target.value)
-                      })}
-                      className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                    >
-                      <option value={7}>Last 7 days</option>
-                      <option value={30}>Last 30 days</option>
-                      <option value={90}>Last 90 days</option>
                     </select>
                   </div>
 

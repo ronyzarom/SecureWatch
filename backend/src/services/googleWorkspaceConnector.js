@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const { JWT } = require('google-auth-library');
 const { query } = require('../utils/database');
 const emailRiskAnalyzer = require('./emailRiskAnalyzer');
+const OptimizedEmailProcessor = require('./optimizedEmailProcessor');
 const { syncComplianceAnalyzer } = require('./syncComplianceAnalyzer');
 
 /**
@@ -23,6 +24,7 @@ class GoogleWorkspaceConnector {
     this.admin = null; // Google Admin SDK
     this.isConfigured = false;
     this.config = null;
+    this.optimizedProcessor = new OptimizedEmailProcessor();
   }
 
   /**
@@ -176,15 +178,25 @@ class GoogleWorkspaceConnector {
   }
 
   /**
-   * Get Gmail messages for a specific user
+   * Get Gmail messages for a specific user from a specific folder/label
    */
   async getUserGmailMessages(userEmail, options = {}) {
     try {
-      const { daysBack = 7, maxMessages = 100 } = options;
+      const { daysBack = 7, maxMessages = 100, folder = 'inbox' } = options;
       const fromDate = new Date(Date.now() - (daysBack * 24 * 60 * 60 * 1000));
-      const query = `after:${Math.floor(fromDate.getTime() / 1000)}`;
+      
+      // Build query based on folder type
+      let query = `after:${Math.floor(fromDate.getTime() / 1000)}`;
+      
+      if (folder === 'sent') {
+        query += ' in:sent';
+      } else if (folder === 'inbox') {
+        query += ' in:inbox';
+      } else {
+        query += ` label:${folder}`;
+      }
 
-      console.log(`📧 Fetching Gmail messages for ${userEmail} since ${fromDate.toISOString()}...`);
+      console.log(`📧 Fetching Gmail messages for ${userEmail} from ${folder} since ${fromDate.toISOString()}...`);
 
       // Create new auth client impersonating the user
       const userAuth = new JWT({
@@ -206,11 +218,11 @@ class GoogleWorkspaceConnector {
       });
 
       if (!listResponse.data.messages) {
-        console.log(`No messages found for ${userEmail}`);
+        console.log(`No messages found for ${userEmail} in ${folder}`);
         return [];
       }
 
-      console.log(`📬 Found ${listResponse.data.messages.length} messages for ${userEmail}`);
+      console.log(`📬 Found ${listResponse.data.messages.length} messages for ${userEmail} in ${folder}`);
 
       // Get detailed message data (in batches)
       const messages = [];
@@ -242,114 +254,169 @@ class GoogleWorkspaceConnector {
         }
       }
 
-      console.log(`✅ Retrieved ${messages.length} detailed messages for ${userEmail}`);
+      console.log(`✅ Retrieved ${messages.length} detailed messages for ${userEmail} from ${folder}`);
       return messages;
 
     } catch (error) {
-      console.error(`❌ Error fetching Gmail messages for ${userEmail}:`, error);
+      console.error(`❌ Error fetching Gmail messages for ${userEmail} from ${folder}:`, error);
       throw error;
     }
   }
 
   /**
-   * Parse Gmail message to extract relevant data
+   * Parse Gmail message and determine direction (inbox/sent)
    */
-  parseGmailMessage(message, userEmail) {
+  parseGmailMessage(message, userEmail, messageType = 'received') {
     try {
-      const headers = message.payload.headers || [];
-      const getHeader = (name) => {
-        const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
-        return header ? header.value : '';
-      };
+      const headers = message.payload.headers;
+      const getHeader = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value;
 
-      // Extract message body
+      // Extract basic info
+      const messageId = message.id;
+      const threadId = message.threadId;
+      const subject = getHeader('Subject') || '';
+      const from = getHeader('From') || '';
+      const to = getHeader('To') || '';
+      const cc = getHeader('Cc') || '';
+      const bcc = getHeader('Bcc') || '';
+      const date = getHeader('Date');
+      const receivedDate = new Date(parseInt(message.internalDate));
+
+      // Extract body
       let body = '';
-      const extractBody = (payload) => {
-        if (payload.body && payload.body.data) {
-          return Buffer.from(payload.body.data, 'base64').toString('utf-8');
-        }
-        if (payload.parts) {
-          for (const part of payload.parts) {
-            if (part.mimeType === 'text/plain' || part.mimeType === 'text/html') {
-              if (part.body && part.body.data) {
-                return Buffer.from(part.body.data, 'base64').toString('utf-8');
-              }
-            }
-            const nested = extractBody(part);
-            if (nested) return nested;
+      let bodyHtml = '';
+      let hasAttachments = false;
+
+      const extractBody = (part) => {
+        if (part.body?.data) {
+          const decodedData = Buffer.from(part.body.data, 'base64').toString('utf-8');
+          if (part.mimeType === 'text/plain') {
+            body = decodedData;
+          } else if (part.mimeType === 'text/html') {
+            bodyHtml = decodedData;
           }
         }
-        return '';
+
+        if (part.parts) {
+          part.parts.forEach(extractBody);
+        }
+
+        if (part.filename && part.filename.length > 0) {
+          hasAttachments = true;
+        }
       };
 
-      body = extractBody(message.payload);
+      if (message.payload) {
+        extractBody(message.payload);
+      }
 
-      // Parse recipients
-      const toHeader = getHeader('To');
-      const ccHeader = getHeader('Cc');
-      const bccHeader = getHeader('Bcc');
-      const recipients = [toHeader, ccHeader, bccHeader]
-        .filter(r => r)
-        .join(', ')
-        .split(',')
-        .map(r => r.trim())
-        .filter(r => r);
+      // Parse email addresses
+      const parseEmail = (emailStr) => {
+        const match = emailStr.match(/([^<]+)?<([^>]+)>/) || emailStr.match(/([^<>\s]+@[^<>\s]+)/);
+        return {
+          name: match && match[1] ? match[1].trim() : '',
+          email: match ? (match[2] || match[1]).trim() : emailStr.trim()
+        };
+      };
 
-      // Check for attachments
-      const hasAttachments = message.payload.parts && 
-        message.payload.parts.some(part => part.filename && part.filename.length > 0);
+      const fromParsed = parseEmail(from);
+      const toParsed = to.split(',').map(email => parseEmail(email.trim()));
+
+      // Determine direction and set appropriate fields
+      let senderEmail, recipientEmails, messageDirection;
+      
+      if (messageType === 'sent') {
+        // For sent emails: user is sender, recipients are in TO field
+        senderEmail = userEmail;
+        recipientEmails = toParsed.map(r => r.email);
+        messageDirection = 'outbound';
+      } else {
+        // For received emails: sender is in FROM field, user is recipient
+        senderEmail = fromParsed.email;
+        recipientEmails = [userEmail];
+        messageDirection = 'inbound';
+      }
 
       return {
-        messageId: message.id,
-        threadId: message.threadId,
-        subject: getHeader('Subject'),
-        from: getHeader('From'),
-        to: getHeader('To'),
-        cc: getHeader('Cc'),
-        bcc: getHeader('Bcc'),
-        recipients: recipients,
-        body: body,
-        bodyType: message.payload.mimeType || 'text/plain',
-        timestamp: new Date(parseInt(message.internalDate)),
-        hasAttachments: hasAttachments,
-        attachmentCount: hasAttachments ? message.payload.parts.filter(p => p.filename && p.filename.length > 0).length : 0,
-        labels: message.labelIds || [],
-        userEmail: userEmail,
-        rawData: message
+        messageId,
+        threadId,
+        subject,
+        body,
+        bodyHtml,
+        senderEmail,
+        senderName: messageType === 'sent' ? userEmail : fromParsed.name,
+        recipientEmails,
+        userEmail, // Gmail account owner
+        from: fromParsed,
+        to: toParsed,
+        cc,
+        bcc,
+        sentAt: receivedDate,
+        hasAttachments,
+        messageType, // 'received' or 'sent'
+        messageDirection, // 'inbound' or 'outbound'
+        rawHeaders: headers
       };
 
     } catch (error) {
-      console.error('❌ Error parsing Gmail message:', error);
+      console.error('Error parsing Gmail message:', error);
       return null;
     }
   }
 
   /**
-   * Process Gmail message for security risks
+   * Process Gmail message for security risks - OPTIMIZED VERSION (like Office 365)
    */
   async processGmailMessage(parsedMessage) {
     try {
-      // Convert to format expected by email risk analyzer
-      const emailForAnalysis = {
-        subject: parsedMessage.subject || '',
-        body: parsedMessage.body || '',
-        bodyType: parsedMessage.bodyType,
-        from: parsedMessage.from,
-        fromEmail: parsedMessage.from,
-        recipients: parsedMessage.recipients,
-        timestamp: parsedMessage.timestamp.toISOString(),
+      // Convert to format expected by OptimizedEmailProcessor (same as Office 365)
+      const emailData = {
         messageId: parsedMessage.messageId,
-        attachments: [], // Gmail attachments need separate API calls
-        hasAttachments: parsedMessage.hasAttachments
+        subject: parsedMessage.subject || '',
+        bodyText: parsedMessage.body || '',
+        bodyHtml: parsedMessage.bodyType === 'html' ? parsedMessage.body : null,
+        sender: {
+          email: parsedMessage.from,
+          name: parsedMessage.fromName || parsedMessage.from
+        },
+        recipients: parsedMessage.recipients || [],
+        sentAt: parsedMessage.timestamp,
+        hasAttachments: parsedMessage.hasAttachments || false,
+        attachments: [] // Gmail attachments would need separate API calls
       };
 
-      // Use existing email risk analyzer
-      const riskAnalysis = await emailRiskAnalyzer.analyzeEmail(emailForAnalysis);
+      // Find employee in database by Gmail account OWNER (not sender)
+      const employeeResult = await query(`
+        SELECT id, name, department 
+        FROM employees 
+        WHERE email = $1
+      `, [parsedMessage.userEmail]); // ✅ FIXED: Use userEmail instead of from
+
+      let employeeId = null;
+      if (employeeResult.rows.length > 0) {
+        employeeId = employeeResult.rows[0].id;
+        console.log(`👤 Found employee: ${employeeResult.rows[0].name} (${parsedMessage.userEmail})`);
+      } else {
+        console.warn(`⚠️ Employee not found for Gmail user: ${parsedMessage.userEmail}`);
+        // Still process the email even if employee not found
+      }
+
+      // 🚀 OPTIMIZED: Use the same advanced processor as Office 365
+      const result = await this.optimizedProcessor.processEmail(emailData, employeeId, 'google_workspace');
 
       return {
-        ...riskAnalysis,
+        riskScore: result.analysis?.totalRiskScore || result.analysis?.securityRiskScore || 0,
+        securityRiskScore: result.analysis?.securityRiskScore || 0,
+        complianceRiskScore: result.analysis?.complianceRiskScore || 0,
+        category: 'gmail_message',
+        isFlagged: result.analysis?.totalRiskScore >= 70,
+        analysis: result.analysis,
+        violations: result.analysis?.violations || [],
         messageType: 'gmail_message',
-        source: 'google_workspace'
+        source: 'google_workspace',
+        success: result.success,
+        violationCreated: result.violationCreated,
+        optimized: true
       };
 
     } catch (error) {
@@ -360,165 +427,84 @@ class GoogleWorkspaceConnector {
         isFlagged: false,
         analysis: {
           error: error.message
-        }
+        },
+        success: false
       };
     }
   }
 
   /**
-   * Store Gmail message in database
+   * Store Gmail message with direction awareness
    */
   async storeGmailMessage(parsedMessage, riskAnalysis) {
     try {
+      // Store in gmail_messages table with direction info
       const result = await query(`
         INSERT INTO gmail_messages (
-          message_id, thread_id, user_email, from_email, to_emails, cc_emails, bcc_emails,
-          subject, body, body_type, sent_at, has_attachments, attachment_count,
-          risk_score, category, is_flagged, analysis, labels, raw_data
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-        ON CONFLICT (message_id) DO UPDATE SET
+          message_id, user_email, from_email, to_emails, subject, body, sent_at,
+          has_attachments, risk_score, is_flagged, message_type, message_direction
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (message_id, user_email) DO UPDATE SET
           risk_score = EXCLUDED.risk_score,
-          category = EXCLUDED.category,
           is_flagged = EXCLUDED.is_flagged,
-          analysis = EXCLUDED.analysis,
-          updated_at = NOW()
+          message_type = EXCLUDED.message_type,
+          message_direction = EXCLUDED.message_direction
         RETURNING id
       `, [
         parsedMessage.messageId,
-        parsedMessage.threadId,
         parsedMessage.userEmail,
-        parsedMessage.from,
-        parsedMessage.to || '',
-        parsedMessage.cc || '',
-        parsedMessage.bcc || '',
-        parsedMessage.subject || '',
-        parsedMessage.body || '',
-        parsedMessage.bodyType,
-        parsedMessage.timestamp,
+        parsedMessage.senderEmail,
+        JSON.stringify(parsedMessage.recipientEmails),
+        parsedMessage.subject,
+        parsedMessage.body,
+        parsedMessage.sentAt,
         parsedMessage.hasAttachments,
-        parsedMessage.attachmentCount,
         riskAnalysis.riskScore || 0,
-        riskAnalysis.category || 'unknown',
         riskAnalysis.isFlagged || false,
-        JSON.stringify(riskAnalysis.analysis || {}),
-        JSON.stringify(parsedMessage.labels || []),
-        JSON.stringify(parsedMessage.rawData)
+        parsedMessage.messageType,
+        parsedMessage.messageDirection
       ]);
 
-      return result.rows[0].id;
+      console.log(`📧 Stored Gmail message: ${parsedMessage.subject} (${parsedMessage.messageDirection})`);
+      return result.rows[0];
 
     } catch (error) {
-      console.error('❌ Error storing Gmail message:', error);
+      // Handle duplicate message gracefully
+      if (error.code === '23505') {
+        console.log(`📧 Message already exists: ${parsedMessage.messageId}`);
+        return null;
+      }
+      console.error('Error storing Gmail message:', error);
       throw error;
     }
   }
 
   /**
-   * Check for policy violations and create alerts for Gmail messages
-   */
-  async checkForGmailViolations(parsedMessage, riskAnalysis) {
-    try {
-      // Create violations for high-risk emails
-      if (riskAnalysis.riskScore >= 70) {
-        // Find employee by email
-        const employeeResult = await query(`
-          SELECT id FROM employees WHERE email = $1
-        `, [parsedMessage.from]);
-
-        if (employeeResult.rows.length === 0) {
-          console.log(`⚠️ No employee found for Gmail user: ${parsedMessage.from}`);
-          return;
-        }
-
-        const employeeId = employeeResult.rows[0].id;
-        const violationType = this.determineViolationType(riskAnalysis);
-        
-        const violationResult = await query(`
-          INSERT INTO violations (
-            employee_id, type, severity, description, 
-            source, metadata, status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING id
-        `, [
-          employeeId,
-          violationType,
-          riskAnalysis.riskScore >= 90 ? 'Critical' :
-          riskAnalysis.riskScore >= 80 ? 'High' : 'Medium',
-          `Gmail violation detected: ${parsedMessage.subject}`,
-          'gmail_analysis',
-          JSON.stringify({
-            messageId: parsedMessage.messageId,
-            riskScore: riskAnalysis.riskScore,
-            riskFactors: riskAnalysis.riskFactors || [],
-            recipients: parsedMessage.recipients?.length || 0
-          }),
-          'Active'
-        ]);
-
-        const violationId = violationResult.rows[0].id;
-        console.log(`🚨 Created Gmail violation ${violationId} for high-risk email: ${parsedMessage.subject}`);
-
-                 // 🆕 AUTO-TRIGGER ENHANCED POLICY EVALUATION
-         try {
-           const policyEvaluationEngine = require('./policyEvaluationEngine');
-           const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
-          if (policiesTriggered > 0) {
-            console.log(`🔥 Gmail policy evaluation triggered ${policiesTriggered} policies for violation ${violationId}`);
-          } else {
-            console.log(`📋 No Gmail policies triggered for violation ${violationId} (employee ${employeeId})`);
-          }
-        } catch (policyError) {
-          console.error(`❌ Failed to evaluate Gmail policies for violation ${violationId}:`, policyError);
-          // Don't fail the entire process if policy evaluation fails
-        }
-      }
-
-    } catch (error) {
-      console.error(`❌ Error creating Gmail violation:`, error);
-    }
-  }
-
-  /**
-   * Determine violation type based on risk analysis
-   */
-  determineViolationType(riskAnalysis) {
-    const factors = riskAnalysis.riskFactors || [];
-    const patterns = riskAnalysis.patterns || [];
-    
-    // Check for specific violation types based on analysis
-    if (factors.some(f => f.includes('data') || f.includes('confidential'))) {
-      return 'Data Breach Risk';
-    } else if (factors.some(f => f.includes('external') || f.includes('recipient'))) {
-      return 'External Communication Risk';
-    } else if (factors.some(f => f.includes('attachment') || f.includes('file'))) {
-      return 'File Transfer Risk';
-    } else if (patterns.some(p => p.category === 'security')) {
-      return 'Security Policy Violation';
-    } else if (patterns.some(p => p.category === 'compliance')) {
-      return 'Compliance Violation';
-    } else {
-      return 'Policy Violation';
-    }
-  }
-
-  /**
-   * Sync Gmail messages for all users
+   * Sync Gmail messages for all users - BOTH INBOX AND SENT (DEFAULT)
    */
   async syncAllGmailMessages(options = {}) {
-    const { daysBack = 7, maxMessagesPerUser = 100, batchSize = 3 } = options;
+    const { daysBack = 7, maxMessagesPerUser = 100, batchSize = 3, syncSentEmails = true } = options;
     
     try {
       console.log(`🔄 Starting Google Workspace Gmail sync - ${daysBack} days back, max ${maxMessagesPerUser} messages per user...`);
+      console.log(`📧 Syncing: ${syncSentEmails ? 'INBOX + SENT' : 'INBOX only'} emails`);
 
       let totalUsers = 0;
       let totalMessages = 0;
       let processedMessages = 0;
       let flaggedMessages = 0;
+      let sentMessages = 0;
+      let receivedMessages = 0;
 
       // Get all users in the domain
       const users = await this.getAllUsers();
       totalUsers = users.length;
       console.log(`📊 Found ${totalUsers} users to process`);
+
+      // 🆕 Sync users to employees table first
+      console.log('👥 Syncing users to employees table...');
+      const userSyncResults = await this.syncUsersToEmployees();
+      console.log(`✅ User sync completed: ${userSyncResults.newEmployees} new, ${userSyncResults.updatedEmployees} updated`);
 
       // Process users in batches to avoid rate limiting
       for (let i = 0; i < users.length; i += batchSize) {
@@ -528,37 +514,56 @@ class GoogleWorkspaceConnector {
           try {
             console.log(`👤 Processing Gmail for user: ${user.primaryEmail}`);
 
-            // Get Gmail messages for this user
-            const messages = await this.getUserGmailMessages(user.primaryEmail, {
+            // 📥 Sync RECEIVED emails (inbox)
+            const inboxMessages = await this.getUserGmailMessages(user.primaryEmail, {
               daysBack,
-              maxMessages: maxMessagesPerUser
+              maxMessages: Math.floor(maxMessagesPerUser / (syncSentEmails ? 2 : 1)),
+              folder: 'inbox'
             });
 
-            totalMessages += messages.length;
+            // 📤 Sync SENT emails if enabled
+            let sentEmailMessages = [];
+            if (syncSentEmails) {
+              sentEmailMessages = await this.getUserGmailMessages(user.primaryEmail, {
+                daysBack,
+                maxMessages: Math.floor(maxMessagesPerUser / 2),
+                folder: 'sent'
+              });
+            }
+
+            const allMessages = [...inboxMessages, ...sentEmailMessages];
+            totalMessages += allMessages.length;
+            receivedMessages += inboxMessages.length;
+            sentMessages += sentEmailMessages.length;
+
+            console.log(`📧 Found ${inboxMessages.length} inbox + ${sentEmailMessages.length} sent = ${allMessages.length} total messages for ${user.primaryEmail}`);
 
             // Process each message
-            for (const message of messages) {
+            for (const message of allMessages) {
               try {
-                // Parse message
-                const parsedMessage = this.parseGmailMessage(message, user.primaryEmail);
+                // Determine message type based on which batch it came from
+                const messageType = inboxMessages.includes(message) ? 'received' : 'sent';
+                
+                // Parse message with direction awareness
+                const parsedMessage = this.parseGmailMessage(message, user.primaryEmail, messageType);
                 if (!parsedMessage) continue;
 
-                // Analyze for risks
+                // Analyze for risks using OptimizedEmailProcessor (violations created automatically)
                 const riskAnalysis = await this.processGmailMessage(parsedMessage);
                 
-                // Store in database
+                // Store in database with direction info
                 await this.storeGmailMessage(parsedMessage, riskAnalysis);
                 
-                // Check for violations and trigger policies
-                await this.checkForGmailViolations(parsedMessage, riskAnalysis);
+                // Note: Violations are now created automatically by OptimizedEmailProcessor
+                // No need for separate checkForGmailViolations call
                 
                 // 🆕 Queue employee for AI compliance analysis (sync-triggered)
-                if (parsedMessage.from) {
+                if (parsedMessage.userEmail) {
                   try {
-                    // Find employee by email
+                    // Find employee by Gmail account owner (not sender)
                     const employeeResult = await query(`
                       SELECT id FROM employees WHERE email = $1
-                    `, [parsedMessage.from]);
+                    `, [parsedMessage.userEmail]); // ✅ FIXED: Use userEmail instead of from
 
                     if (employeeResult.rows.length > 0) {
                       const employeeId = employeeResult.rows[0].id;
@@ -580,6 +585,8 @@ class GoogleWorkspaceConnector {
               }
             }
 
+            console.log(`✅ Completed ${user.primaryEmail}: ${allMessages.length} messages processed (${inboxMessages.length} received, ${sentEmailMessages.length} sent)`);
+
           } catch (userError) {
             console.error(`❌ Error processing user ${user.primaryEmail}:`, userError);
           }
@@ -599,6 +606,11 @@ class GoogleWorkspaceConnector {
         totalMessages,
         processedMessages,
         flaggedMessages,
+        receivedMessages,
+        sentMessages,
+        syncedUsers: userSyncResults.newEmployees + userSyncResults.updatedEmployees,
+        newEmployees: userSyncResults.newEmployees,
+        updatedEmployees: userSyncResults.updatedEmployees,
         syncedAt: new Date().toISOString()
       };
 
@@ -607,6 +619,83 @@ class GoogleWorkspaceConnector {
 
     } catch (error) {
       console.error('❌ Google Workspace Gmail sync failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync Google Workspace users to employees table
+   */
+  async syncUsersToEmployees() {
+    try {
+      console.log('👥 Starting Google Workspace user sync to employees table...');
+
+      // Get all users from Google Workspace
+      const googleWorkspaceUsers = await this.getAllUsers();
+      
+      const results = {
+        totalUsers: googleWorkspaceUsers.length,
+        newEmployees: 0,
+        updatedEmployees: 0,
+        errors: []
+      };
+
+      for (const user of googleWorkspaceUsers) {
+        try {
+          const email = user.primaryEmail;
+          const name = user.name?.fullName || user.name?.givenName + ' ' + user.name?.familyName || email.split('@')[0];
+          const department = user.orgUnitPath || 'General';
+          const jobTitle = user.organizations?.[0]?.title || 'Employee';
+
+          if (!email) {
+            results.errors.push({
+              user: name || user.id,
+              error: 'No email address found'
+            });
+            continue;
+          }
+
+          // Check if employee already exists
+          const existingEmployee = await query(
+            'SELECT id FROM employees WHERE email = $1',
+            [email]
+          );
+
+          if (existingEmployee.rows.length > 0) {
+            // Update existing employee
+            await query(`
+              UPDATE employees 
+              SET name = $1, department = $2, job_title = $3, updated_at = NOW()
+              WHERE email = $4
+            `, [name, department, jobTitle, email]);
+            
+            results.updatedEmployees++;
+            console.log(`✅ Updated employee: ${name} (${email})`);
+          } else {
+            // Create new employee
+            await query(`
+              INSERT INTO employees (name, email, department, job_title, risk_score, risk_level, is_active, created_at, updated_at)
+              VALUES ($1, $2, $3, $4, 0, 'Low', true, NOW(), NOW())
+            `, [name, email, department, jobTitle]);
+            
+            results.newEmployees++;
+            console.log(`✅ Created employee: ${name} (${email})`);
+          }
+
+        } catch (userError) {
+          console.error(`❌ Error processing user ${user.primaryEmail}:`, userError);
+          results.errors.push({
+            user: user.primaryEmail,
+            error: userError.message
+          });
+        }
+      }
+
+      console.log('🎉 Google Workspace user sync completed:', results);
+      return results;
+
+    } catch (error) {
+      console.error('❌ Error during Google Workspace user sync:', error);
       throw error;
     }
   }

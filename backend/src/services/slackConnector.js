@@ -305,6 +305,15 @@ class SlackConnector {
       // Store message in database
       await this.storeMessageInDatabase(messageData, riskAnalysis, employeeId);
 
+      // Create violations for high-risk messages (like other connectors)
+      let violationsCreated = 0;
+      if (employeeId && riskAnalysis.riskScore >= 70) {
+        const violationId = await this.checkForSlackViolations(messageData, riskAnalysis, employeeId);
+        if (violationId) {
+          violationsCreated = 1;
+        }
+      }
+
       // Queue employee for AI compliance analysis (sync-triggered)
       if (employeeId && riskAnalysis.riskScore > 50) {
         await syncComplianceAnalyzer.queueEmployeeForAnalysis(employeeId, 'slack_message_sync');
@@ -314,7 +323,7 @@ class SlackConnector {
         success: true,
         messageId: message.ts,
         riskScore: riskAnalysis.riskScore,
-        violationsFound: riskAnalysis.violationsDetected
+        violationsFound: violationsCreated
       };
 
     } catch (error) {
@@ -386,6 +395,105 @@ class SlackConnector {
         violationsDetected: 0
       };
     }
+  }
+
+  /**
+   * Check for violations in Slack messages and create violation records
+   */
+  async checkForSlackViolations(messageData, riskAnalysis, employeeId) {
+    try {
+      // Create violations for high-risk Slack messages
+      const violationType = this.determineSlackViolationType(riskAnalysis, messageData);
+      
+      const violationResult = await query(`
+        INSERT INTO violations (
+          employee_id, type, severity, description, 
+          source, metadata, status, workflow_status, discovered_at,
+          incident_type, requires_notification
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id
+      `, [
+        employeeId,
+        violationType,
+        riskAnalysis.riskScore >= 90 ? 'Critical' :
+        riskAnalysis.riskScore >= 80 ? 'High' : 'Medium',
+        `Slack violation detected in #${messageData.channel.name}: ${messageData.text?.substring(0, 100)}...`,
+        'slack_analysis',
+        JSON.stringify({
+          messageId: messageData.messageId,
+          channelId: messageData.channel.id,
+          channelName: messageData.channel.name,
+          isPrivateChannel: messageData.channel.isPrivate,
+          riskScore: riskAnalysis.riskScore,
+          riskFactors: riskAnalysis.riskFactors || [],
+          hasAttachments: messageData.hasAttachments,
+          mentionsCount: messageData.mentions?.length || 0,
+          isThreadReply: messageData.isThreadReply
+        }),
+        'Active',
+        'open',
+        new Date(),
+        'slack_security_violation',
+        riskAnalysis.riskScore >= 90
+      ]);
+
+      const violationId = violationResult.rows[0].id;
+      console.log(`🚨 Created Slack violation ${violationId} for high-risk message in #${messageData.channel.name}`);
+
+      // 🆕 AUTO-TRIGGER ENHANCED POLICY EVALUATION
+      try {
+        const policyEvaluationEngine = require('./policyEvaluationEngine');
+        const policiesTriggered = await policyEvaluationEngine.evaluatePoliciesForViolation(violationId, employeeId);
+        if (policiesTriggered > 0) {
+          console.log(`🔥 Slack policy evaluation triggered ${policiesTriggered} policies for violation ${violationId}`);
+        } else {
+          console.log(`📋 No Slack policies triggered for violation ${violationId} (employee ${employeeId})`);
+        }
+      } catch (policyError) {
+        console.error(`⚠️ Policy evaluation failed for Slack violation ${violationId}:`, policyError.message);
+      }
+
+      return violationId;
+
+    } catch (error) {
+      console.error(`❌ Error creating Slack violation for message ${messageData.messageId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Determine violation type based on Slack message analysis
+   */
+  determineSlackViolationType(riskAnalysis, messageData) {
+    const riskFactors = riskAnalysis.riskFactors || [];
+    
+    // Check for specific violation types
+    if (riskFactors.some(factor => factor.toLowerCase().includes('external file'))) {
+      return 'Slack External File Sharing';
+    }
+    
+    if (riskFactors.some(factor => factor.toLowerCase().includes('private channel'))) {
+      return 'Slack Private Channel Risk';
+    }
+    
+    if (riskFactors.some(factor => factor.toLowerCase().includes('suspicious'))) {
+      return 'Slack Suspicious Content';
+    }
+    
+    if (riskFactors.some(factor => factor.toLowerCase().includes('policy'))) {
+      return 'Slack Policy Violation';
+    }
+    
+    if (messageData.hasAttachments) {
+      return 'Slack File Sharing Risk';
+    }
+    
+    if (messageData.mentions?.length > 5) {
+      return 'Slack Mass Mention';
+    }
+    
+    // Default violation type
+    return 'Slack Security Risk';
   }
 
   /**
